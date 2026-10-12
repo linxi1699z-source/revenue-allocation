@@ -1,0 +1,4 @@
+interface:
+  display_name: "支付后台PRD编写"
+  short_description: "按支付后台PRD模板生成字段交互状态幂等与验收说明"
+  default_prompt: "Use $pay-admin-prd-writer to draft a backend PRD from business requirements, prototype links, field rules, and interaction details."
