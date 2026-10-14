@@ -22,7 +22,7 @@ jobs:
       - name: Prepare static prototype
         run: |
           mkdir public
-          cp index.html app.js model.js styles.css select-design.css select-design.js public/
+          cp index.html app.js model.js payment.js styles.css select-design.css select-design.js public/
       - uses: actions/upload-pages-artifact@v3
         with:
           path: public

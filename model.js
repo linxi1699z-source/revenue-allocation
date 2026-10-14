@@ -15,22 +15,59 @@ const FinanceModel = (() => {
    const refundAmount=o.price+o.tax,refundTax=o.tax;
    return Math.round((refundAmount-refundTax)*15/100);
   }
-  return appleRefundReport.get(o.platform)??null;
+  return o.reportNetRefund??appleRefundReport.get(o.platform)??null;
+ }
+ const PACIFIC='America/Los_Angeles';
+ function formatTime(timestamp,zone=PACIFIC){
+  if(timestamp===null||timestamp===undefined)return '—';
+  const parts=Object.fromEntries(new Intl.DateTimeFormat('en-CA',{timeZone:zone,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'}).formatToParts(new Date(timestamp)).map(p=>[p.type,p.value]));
+  return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second}`;
+ }
+ const dateInZone=(timestamp,zone=PACIFIC)=>formatTime(timestamp,zone).slice(0,10);
+ // Resolve a business-day end to a timestamp with the IANA zone's DST offset.
+ function dayEndTimestamp(date,zone=PACIFIC){
+  const target=Date.parse(date+'T23:59:59Z');let result=target;
+  for(let i=0;i<3;i++)result+=target-Date.parse(formatTime(result,zone).replace(' ','T')+'Z');
+  return result;
+ }
+ for(const o of orders)o.refunds=o.refund===null?[]:[{id:`refund-${o.id}`,timestamp:o.refund,cents:netRefund(o),amount:o.price+o.tax,allocationStarted:false}];
+ // Same Pacific date, separate API refund IDs; a replay and an already-started
+ // historical refund demonstrate deduplication and exclusion before aggregation.
+ orders[10].refunds=[
+  {id:'refund-10-a',timestamp:orders[10].refund,cents:200,amount:1450,allocationStarted:false},
+  {id:'refund-10-b',timestamp:orders[10].refund+3600000,cents:250,amount:1813,allocationStarted:false},
+  {id:'refund-10-a',timestamp:orders[10].refund,cents:200,amount:1450,allocationStarted:false},
+  {id:'refund-10-history',timestamp:orders[10].refund-DAY,cents:100,amount:666,allocationStarted:true}
+ ];
+ function pendingIncome(o){return eligible(o)&&!ledger(o).some(r=>r.event==='initial')?[{order:o.order,platform:o.platform,cents:o.stage==='waiting'?null:o.price-o.commission,date:dateInZone(o.paid),timestamp:o.paid}]:[];}
+ function pendingRefundEntries(o){
+  const posted=new Set([...ledger(o).flatMap(r=>r.refundIds||[]),...(o.refunds||[]).filter(r=>r.allocationStarted).map(r=>r.id)]),seen=new Set();
+  return (o.refunds||[]).filter(r=>{if(posted.has(r.id)||seen.has(r.id))return false;seen.add(r.id);return true;}).sort((a,b)=>a.timestamp-b.timestamp);
+ }
+ function pendingRefunds(o){
+  const groups=new Map();
+  for(const r of pendingRefundEntries(o)){
+   const date=dateInZone(r.timestamp);
+   const g=groups.get(date)||{order:o.order,platform:o.platform,date,cents:0,timestamps:[]};
+   g.cents=g.cents===null||r.cents===null?null:g.cents+r.cents;
+   g.timestamps.push(r.timestamp);groups.set(date,g);
+  }
+  return [...groups.values()].sort((a,b)=>a.date.localeCompare(b.date));
  }
  function eligible(o){return o.paid!==null&&o.paid!==undefined&&Number.isFinite(o.paid);}
- function netIncome(o){if(!eligible(o)||o.stage==='waiting')return null;return o.status==='已退款'?0:o.price-o.commission;}
+ function netIncome(o){if(!eligible(o)||o.stage==='waiting')return null;return o.status==='已退款'?(o.refundKind==='partial'?o.price-o.commission-netRefund(o):0):o.price-o.commission;}
  function buildLedger(o){
   const basis=o.price-o.commission,rows=[],receivable=`平台应收款-${o.provider}`;
-  const start=new Date(o.paid);
-  const calendarDay=t=>{const d=new Date(t);return Date.UTC(d.getFullYear(),d.getMonth(),d.getDate())/DAY;};
+  const start=new Date(dateInZone(o.paid)+'T00:00:00Z');
+  const calendarDay=t=>Date.parse(dateInZone(t)+'T00:00:00Z')/DAY;
   const refundDay=o.refund===null?null:calendarDay(o.refund)-calendarDay(o.paid);
   const revokeDay=o.status==='退款撤销'&&refundDay!==null?refundDay+2:null;
   const lastDay=Math.min(calendarDay(asOf)-calendarDay(o.paid),Math.max(o.days-1,refundDay??0,revokeDay??0));
   const add=(day,account,direction,cents,event='allocation',keepZero=false)=>{
    if(!cents&&!keepZero)return;
-   const d=new Date(start.getFullYear(),start.getMonth(),start.getDate()+day);
-   const date=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-   rows.push({date,account,direction,cents,event});
+   const date=new Date(start.getTime()+day*DAY).toISOString().slice(0,10);
+   const refundIds=event==='refund'?(o.refunds||[]).filter(r=>!r.allocationStarted&&dateInZone(r.timestamp)===date).map(r=>r.id):[];
+   rows.push({date,timestamp:dayEndTimestamp(date),account,direction,cents,event,refundIds});
   };
   add(0,receivable,'借记',basis,'initial');add(0,'合同负债','贷记',basis,'initial');
   let accrued=0,refundAccrued=0;
@@ -58,10 +95,14 @@ const FinanceModel = (() => {
  Object.assign(orders[0],{stage:'waiting'});
  Object.assign(orders[1],{stage:'matched'});
  Object.assign(orders[2],{stage:'queued'});
+ // Pending examples: income only (2), full refund (3), partial refund (5).
+ Object.assign(orders[3],{stage:'queued',refundKind:'full'});
+ Object.assign(orders[5],{stage:'queued',status:'已退款',refundKind:'partial',reportNetRefund:400,refundAmount:512,refundTax:41});
+ orders[5].refunds=[{id:'refund-5',timestamp:orders[5].refund,cents:400,amount:512,allocationStarted:false}];
  Object.assign(orders[6],{days:7});
  Object.assign(orders[8],{days:7,amountMismatch:true});
  Object.assign(orders[9],{failure:{date:'2026-09-20',step:'生成分摊分录',reason:'分摊服务临时不可用',attempts:1,persistent:false}});
- Object.assign(orders[10],{failure:{date:'2026-09-20',step:'生成退款分摊分录',reason:'退款分摊任务临时失败，平台应收款待冲回',attempts:1,persistent:false}});
+ Object.assign(orders[10],{failure:{date:'2026-09-19',step:'生成退款分摊分录',reason:'退款分摊任务临时失败，平台应收款待冲回',attempts:1,persistent:false}});
  Object.assign(orders[11],{failure:{date:'2026-09-19',step:'写入分摊记录',reason:'科目映射缺失',attempts:3,persistent:true}});
  function ledger(o){
   if(!eligible(o)||['waiting','matched','queued'].includes(o.stage))return [];
@@ -100,8 +141,9 @@ const FinanceModel = (() => {
   const receivable=o.price-o.commission+rows.filter(r=>r.account===`平台应收款-${o.provider}`&&r.event!=='initial').reduce((s,r)=>s+(r.direction==='借记'?r.cents:-r.cents),0);
   return {receivable,liability:receivable-revenue,revenue};
  }
- function latestAllocationTime(o){const rows=ledger(o);return rows.length?rows[rows.length-1].date+' 23:59:59':'—';}
+ function latestAllocationTimestamp(o){const rows=ledger(o);return rows.length?rows[rows.length-1].timestamp:null;}
+ function latestAllocationTime(o,zone=PACIFIC){return formatTime(latestAllocationTimestamp(o),zone);}
 
- return {orders,countries,ledger,monthly,balances,netIncome,netRefund,asOf,eligible,allocationStatuses,allocationStatus,reconciliation,retry,latestAllocationTime};
+ return {orders,countries,ledger,monthly,balances,netIncome,netRefund,asOf,eligible,allocationStatuses,allocationStatus,reconciliation,retry,latestAllocationTime,latestAllocationTimestamp,formatTime,dateInZone,dayEndTimestamp,pendingIncome,pendingRefunds,pendingRefundEntries};
 })();
 if(typeof module!=='undefined')module.exports=FinanceModel;
