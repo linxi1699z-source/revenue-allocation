@@ -36,8 +36,8 @@ document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{state.tab=b.da
 function renderPending(){
  const o=state.pendingOrder;if(!o)return;
  const income=FinanceModel.pendingIncome(o),refunds=FinanceModel.pendingRefunds(o);
- $('#pending-income-body').innerHTML=income.map(r=>`<tr><td>${r.order}</td><td>${r.platform}</td><td class="money">${money(r.cents)}${r.cents===null?'':' USD'}</td><td>${time(r.timestamp)}</td></tr>`).join('')||'<tr><td colspan="4" class="pending-empty">暂无待分摊收入</td></tr>';
- $('#pending-refund-body').innerHTML=refunds.map(r=>`<tr><td>${r.order}</td><td>${r.platform}</td><td class="money">${money(r.cents)}${r.cents===null?'':' USD'}</td><td><div class="refund-group-date">${r.date}（太平洋日期）</div>${r.timestamps.map(t=>`<div>${time(t)}</div>`).join('')}</td></tr>`).join('')||'<tr><td colspan="4" class="pending-empty">暂无待分摊退款</td></tr>';
+ $('#pending-income-body').innerHTML=income.map(r=>`<tr><td>${r.order}</td><td>${r.platform}</td><td class="money">${money(r.cents)}${r.cents===null?'':' USD'}</td><td><span class="direction">借记</span></td><td>${time(r.timestamp)}</td></tr>`).join('')||'<tr><td colspan="5" class="pending-empty">暂无待分摊收入</td></tr>';
+ $('#pending-refund-body').innerHTML=refunds.map(r=>`<tr><td>${r.order}</td><td>${r.platform}</td><td class="money">${money(r.cents)}${r.cents===null?'':' USD'}</td><td><span class="direction credit">贷记</span></td><td><div class="refund-group-date">${r.date}（太平洋日期）</div>${r.timestamps.map(t=>`<div>${time(t)}</div>`).join('')}</td></tr>`).join('')||'<tr><td colspan="5" class="pending-empty">暂无待分摊退款</td></tr>';
 }
 $('#order-body').onclick=e=>{const button=e.target.closest('[data-pending-id]');if(!button)return;state.pendingOrder=FinanceModel.orders.find(o=>o.id===Number(button.dataset.pendingId));renderPending();$('#pending-dialog').showModal();};
 $('#pending-close').onclick=$('#pending-done').onclick=()=>$('#pending-dialog').close();
@@ -50,9 +50,9 @@ function route(){
  if(detail){state.order=FinanceModel.orders.find(o=>o.id===Number(hash.split('/')[1]));if(!state.order){location.hash='income';return;}state.tab='daily';state.detailPage=1;renderDetail();}
  else state.order=null;
  $('.page-heading').hidden=!bills;$('#list-view').hidden=detail||bills||payment;$('#detail-view').hidden=!detail;$('#bills-view').hidden=!bills;
- const title=bills?'账单汇总':detail?'分摊明细':'收入分摊';
+ const title=bills?'账单汇总':detail?'分摊明细':'收入明细';
  $('#page-title').textContent=title;$('#page-subtitle').textContent=bills?'订阅业务账单管理':detail?'查看订单对应的收入确认与借贷记录':'查询订阅订单收入，追踪每日与每月的分摊记录';
- $('#breadcrumb').innerHTML='财务中心 <b>›</b> '+(detail?'<a href="#income">收入分摊</a> <b>›</b> '+title:title);
+ $('#breadcrumb').innerHTML='财务中心 <b>›</b> '+(detail?'<a href="#income">收入明细</a> <b>›</b> '+title:title);
  if(payment)$('#breadcrumb').innerHTML='首页 <b>›</b> 支付中心 <b>›</b> 订单管理';
  document.querySelectorAll('#finance-nav a').forEach(a=>a.classList.toggle('active',!payment&&(bills?a.hash==='#bills':a.hash==='#income')));
 }

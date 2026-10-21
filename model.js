@@ -133,12 +133,12 @@ const FinanceModel = (() => {
 
  function monthly(rows){const groups=new Map(),accounts=[...new Set(rows.map(r=>r.account))],months=[...new Set(rows.map(r=>r.date.slice(0,7)))];for(const date of months)for(const account of accounts)groups.set(date+'|'+account,{date,account,net:0});for(const r of rows){const month=r.date.slice(0,7),key=month+'|'+r.account;const g=groups.get(key)||{date:month,account:r.account,net:0};g.net+=(r.direction==='借记'?1:-1)*r.cents;groups.set(key,g);}return [...groups.values()].filter(g=>!(g.account.startsWith('平台应收款-')&&g.net===0)).map(g=>({date:g.date,account:g.account,direction:g.net>0?'借记':g.net<0?'贷记':g.account.startsWith('平台应收款')?'贷记':'借记',cents:Math.abs(g.net)}));}
  function balances(o){
-  if(netIncome(o)===null)return {receivable:null,liability:null,revenue:null};
-  const rows=ledger(o);
-  const revenue=rows.filter(r=>r.account==='主营业务收入').reduce((s,r)=>s+(r.direction==='贷记'?r.cents:-r.cents),0);
-  // Initialize from matched income; apply refunds/reversals only once posted.
-  // Initial-entry discrepancies remain independently checked by reconciliation.
-  const receivable=o.price-o.commission+rows.filter(r=>r.account===`平台应收款-${o.provider}`&&r.event!=='initial').reduce((s,r)=>s+(r.direction==='借记'?r.cents:-r.cents),0);
+  const proceeds=netIncome(o),rows=ledger(o);
+  // Only committed daily records are exposed by ledger; failed dates are excluded.
+  if(!rows.length)return {receivable:proceeds,liability:proceeds,revenue:0};
+  const total=(account,normal)=>rows.filter(r=>r.account===account).reduce((sum,r)=>sum+(r.direction===normal?r.cents:-r.cents),0);
+  const receivable=total(`平台应收款-${o.provider}`,'借记');
+  const revenue=total('主营业务收入','贷记');
   return {receivable,liability:receivable-revenue,revenue};
  }
  function latestAllocationTimestamp(o){const rows=ledger(o);return rows.length?rows[rows.length-1].timestamp:null;}
