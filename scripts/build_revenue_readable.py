@@ -336,18 +336,29 @@ def continuous_route(p,e):
     bx,by=b['x']+b['w']/2,b['y']+b['h']/2
     start=(ax,a['y']+a['h']); end=(bx,b['y'])
     e['ports']=(.5,1,.5,0)
+    below=any(n['id'] not in (e['s'],e['t'],p.final_id) and n['y']>=a['y']+a['h']
+              and max(a['x'],n['x'])<min(a['x']+a['w'],n['x']+n['w']) for n in p.nodes.values())
     if e.get('closing'):
         direct=[start,end]
         if ax==bx and not scope['crosses'](direct,list(p.nodes.values()),(e['s'],e['t'])):
             pts=direct
         else:
-            lane=max(n['x']+n['w'] for n in p.nodes.values())+80
-            pts=[start,(ax,start[1]+40),(lane,start[1]+40),(lane,end[1]-60),(bx,end[1]-60),end]
+            lane=max(n['x']+n['w'] for n in p.nodes.values())+100
+            if below:
+                pts=[(a['x']+a['w'],ay),(lane,ay),(lane,end[1]-60),(bx,end[1]-60),end]
+                e['ports']=(1,.5,.5,0)
+            else:
+                pts=[start,(ax,start[1]+40),(lane,start[1]+40),(lane,end[1]-60),(bx,end[1]-60),end]
     elif e['side']:
         pts=[(a['x']+a['w'],ay),(b['x'],by)]
         e['ports']=(1,.5,0,.5)
     elif ax==bx and end[1]>start[1]:
         pts=[start,end]
+    elif below and end[1]>a['y']+a['h'] and a['kind']!='decision':
+        # Return branches leave to the right if another box occupies the column below.
+        lane=a['x']+a['w']+60
+        pts=[(a['x']+a['w'],ay),(lane,ay),(lane,end[1]-60),(bx,end[1]-60),end]
+        e['ports']=(1,.5,.5,0)
     elif p.id=='normal' and e['s']=='next':
         # The daily loop returns to the actual date iterator along the left margin.
         bottom=max(n['y']+n['h'] for n in p.nodes.values() if n['id']!=p.final_id)+60

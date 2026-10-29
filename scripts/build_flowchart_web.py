@@ -8,7 +8,7 @@ import zlib
 import xml.etree.ElementTree as ET
 from html import escape
 from html.parser import HTMLParser
-from urllib.parse import quote, unquote
+from urllib.parse import unquote
 
 ROOT=Path(__file__).resolve().parents[1]
 OUT=ROOT/'flowcharts'
@@ -90,11 +90,7 @@ for i,diagram in enumerate(mxfile.findall('diagram')):
     notes=[c.get('value') for c in cells if re.fullmatch(r'note\d+',c.get('id',''))]
     title=diagram.get('name').split('、',1)[1].strip('「」')
     pages.append(dict(id=diagram.get('id'),number=i+1,title=title,description=byid['subtitle'].get('value'),rules=notes[1:-2],source=notes[-1].removeprefix('来源：'),svg=svg,width=w,height=h,nodes=nodes,decisions=sum(n['kind']=='decision' for n in nodes)))
-editor_xml=ET.tostring(mxfile,encoding='unicode')
-packed=zlib.compressobj(wbits=-15)
-encoded=quote(editor_xml,safe="~()*!.'-").encode()
-editor_data=base64.b64encode(packed.compress(encoded)+packed.flush()).decode()
-payload=dict(pages=pages,editorData=editor_data,revision='flow-library-v1',sourceDigest=hashlib.sha256((ROOT/'收入分摊流程图.drawio').read_bytes()).hexdigest())
+payload=dict(pages=pages,revision='flow-library-v2-readonly',sourceDigest=hashlib.sha256((ROOT/'收入分摊流程图.drawio').read_bytes()).hexdigest())
 (OUT/'data.js').write_text('window.REVENUE_FLOWS = '+json.dumps(payload,ensure_ascii=False,separators=(',',':'))+';\n')
 index=(OUT/'index.html').read_text()
 for asset in ('styles.css','app.js','data.js'):
