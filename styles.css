@@ -45,3 +45,12 @@
 
 /* Income list: discount type and renamed registration/cutoff columns. */
 .orders{min-width:3720px}
+
+/* Keep search actions directly after the final filter at every grid width. */
+#search-form .search-actions{grid-column:auto;justify-content:flex-start;align-items:flex-end;flex-wrap:wrap;align-content:flex-end}#search-error:empty{display:none}.orders{min-width:3840px}
+
+.orders{min-width:3940px}.table-heading{display:flex;justify-content:space-between;align-items:center;gap:16px}#export-dialog{width:520px;max-width:calc(100vw - 32px);border:0;border-radius:8px;padding:24px;color:#343943}#export-dialog::backdrop{background:#0006}.export-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:24px}.export-header h2{font-size:17px;margin:0}.export-header button{border:0;font-size:22px;padding:0 6px}.export-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:20px}.export-note{line-height:1.8;margin-top:14px}.required,#export-error{color:#cf4141}#export-error{margin-top:10px}
+
+#allocation-params{display:flex;align-items:flex-end;gap:12px;margin-top:12px}#allocation-params label{min-width:240px}
+
+.orders{min-width:4180px}.orders th:nth-last-child(2),.orders td:nth-last-child(2){min-width:220px;max-width:300px;white-space:normal;line-height:1.6}

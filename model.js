@@ -1,7 +1,7 @@
 /* Synthetic USD data. Integer cents keep daily/monthly ledger totals exact. */
 const FinanceModel = (() => {
  const DAY=86400000, asOf=Date.UTC(2026,9,27,6,59,59), countries=['美国','英国','德国','加拿大','日本','澳大利亚','法国','新加坡'];
- const orders=Array.from({length:36},(_,i)=>{const provider=i%3===1?'Google':'Apple',price=[499,999,2999,5999][i%4],tax=Math.round(price*[.088,.2,.19,.05,0][i%5]),paid=Date.UTC(2026,8,18-Math.floor(i/3),1+i%8,47);return {id:i,order:i===0?'P-HK-179151346491393544':`P-HK-${179151346491393500n+BigInt(i*137)}`,platform:provider==='Apple'?`${2000001248157211n+BigInt(i*317)}`:`GPA.3371-2089-6241-${12000+i}`,product:['feature_rc_test_basic_ar','feature_rc_premium_monthly','feature_rc_basic_quarterly','feature_rc_premium_annual'][i%4],provider,discountType:['标准','免费试用','折扣','赠送'][i%4],status:i%7===3?'已退款':i%7===5?'退款撤销':'已支付',price,tax,paid,refund:i%7===3||i%7===5?paid+5*DAY:null,commission:Math.round(price*.15),country:countries[i%8],account:countries[(i+(i%5===0?1:0))%8],days:[30,30,90,365][i%4]};});
+ const orders=Array.from({length:36},(_,i)=>{const provider=i%3===1?'Google':'Apple',price=[499,999,2999,5999][i%4],tax=Math.round(price*[.088,.2,.19,.05,0][i%5]),paid=Date.UTC(2026,8,18-Math.floor(i/3),1+i%8,47);return {id:i,currency:'USD',order:i===0?'P-HK-179151346491393544':`P-HK-${179151346491393500n+BigInt(i*137)}`,platform:provider==='Apple'?`${2000001248157211n+BigInt(i*317)}`:`GPA.3371-2089-6241-${12000+i}`,product:['feature_rc_test_basic_ar','feature_rc_premium_monthly','feature_rc_basic_quarterly','feature_rc_premium_annual'][i%4],provider,discountType:['标准','免费试用','折扣','赠送'][i%4],status:i%7===3?'已退款':i%7===5?'退款撤销':'已支付',price,tax,paid,refund:i%7===3||i%7===5?paid+5*DAY:null,commission:Math.round(price*.15),country:countries[i%8],account:countries[(i+(i%5===0?1:0))%8],days:[30,30,90,365][i%4]};});
  orders[0].country=orders[0].account='美国';
  // Synthetic Apple sales-report rows, matched by platform order ID; amounts in cents.
  const appleRefundReport=new Map([
@@ -39,8 +39,9 @@ const FinanceModel = (() => {
   {id:'refund-10-a',timestamp:orders[10].refund,cents:200,amount:1450,allocationStarted:false},
   {id:'refund-10-history',timestamp:orders[10].refund-DAY,cents:100,amount:666,allocationStarted:true}
  ];
- function pendingIncome(o){return eligible(o)&&!ledger(o).some(r=>r.event==='initial')?[{order:o.order,platform:o.platform,cents:o.stage==='waiting'?null:o.price-o.commission,date:dateInZone(o.paid),timestamp:o.paid}]:[];}
+ function pendingIncome(o){return eligible(o)&&o.stage!=='waiting'&&!ledger(o).some(r=>r.event==='initial')?[{order:o.order,platform:o.platform,cents:o.stage==='waiting'?null:o.price-o.commission,date:dateInZone(o.paid),timestamp:o.paid}]:[];}
  function pendingRefundEntries(o){
+  if(!eligible(o)||o.stage==='waiting')return [];
   const posted=new Set([...ledger(o).flatMap(r=>r.refundIds||[]),...(o.refunds||[]).filter(r=>r.allocationStarted).map(r=>r.id)]),seen=new Set();
   return (o.refunds||[]).filter(r=>{if(posted.has(r.id)||seen.has(r.id))return false;seen.add(r.id);return true;}).sort((a,b)=>a.timestamp-b.timestamp);
  }
@@ -91,7 +92,7 @@ const FinanceModel = (() => {
   }
   return rows;
  }
- const allocationStatuses=['待获取净收入数据','已匹配收入','待分摊','分摊中','完成分摊','完成分摊（金额异常）','分摊异常'];
+ const allocationStatuses=['待分摊','分摊中','完成分摊','分摊异常'];
  Object.assign(orders[0],{stage:'waiting'});
  Object.assign(orders[1],{stage:'matched'});
  Object.assign(orders[2],{stage:'queued'});
@@ -103,7 +104,7 @@ const FinanceModel = (() => {
  Object.assign(orders[8],{days:7,amountMismatch:true});
  Object.assign(orders[9],{failure:{date:'2026-09-20',step:'生成分摊分录',reason:'分摊服务临时不可用',attempts:1,persistent:false}});
  Object.assign(orders[10],{failure:{date:'2026-09-19',step:'生成退款分摊分录',reason:'退款分摊任务临时失败，平台应收账款待冲回',attempts:1,persistent:false}});
- Object.assign(orders[11],{failure:{date:'2026-09-19',step:'写入分摊记录',reason:'科目映射缺失',attempts:3,persistent:true}});
+ Object.assign(orders[11],{failure:{date:'2026-09-19',step:'写入分摊记录',reason:'计提项映射缺失',attempts:3,persistent:true}});
  function ledger(o){
   if(!eligible(o)||['waiting','matched','queued'].includes(o.stage))return [];
   let rows=buildLedger(o);
@@ -111,17 +112,17 @@ const FinanceModel = (() => {
   if(o.amountMismatch){rows=rows.map((r,i)=>i===0?{...r,cents:r.cents+1}:r);}
   return rows;
  }
- function reconciliation(o){const rows=ledger(o);const total=(name,normal)=>rows.filter(r=>r.account===name).reduce((s,r)=>s+(r.direction===normal?r.cents:-r.cents),0);return {receivable:total(`平台应收账款-${o.provider}`,'借记'),revenue:total('主营业务收入','贷记')};}
+ function reconciliation(o){const rows=ledger(o);const total=(name,normal)=>rows.filter(r=>r.account===name).reduce((s,r)=>s+(r.direction===normal?r.cents:-r.cents),0);const receivable=total(`平台应收账款-${o.provider}`,'借记'),financialExpenses=total('财务费用','借记'),revenue=total('主营业务收入','贷记');return {receivable,financialExpenses,revenue,difference:receivable+financialExpenses-revenue};}
+ function entitlementExpiry(o){return o.expiresAt??dayEndTimestamp(new Date(Date.parse(dateInZone(o.paid)+'T00:00:00Z')+(o.days-1)*DAY).toISOString().slice(0,10));}
  function allocationStatus(o){
   if(!eligible(o))return null;
-  if(o.stage==='waiting')return allocationStatuses[0];
-  if(o.stage==='matched')return allocationStatuses[1];
-  if(o.stage==='queued')return allocationStatuses[2];
-  if(o.failure)return allocationStatuses[6];
-  const b=balances(o),check=reconciliation(o);
-  if(b.liability===0&&b.revenue===netIncome(o))return check.receivable===check.revenue?allocationStatuses[4]:allocationStatuses[5];
-  return allocationStatuses[3];
+  if(o.failure)return '分摊异常';
+  const registered=latestAllocationTimestamp(o);
+  if(registered===null)return '待分摊';
+  if(entitlementExpiry(o)<=registered||balances(o).liability===0)return '完成分摊';
+  return '分摊中';
  }
+ function anomalyRemark(o){if(o.failure)return o.failure.reason;return allocationStatus(o)==='完成分摊'&&reconciliation(o).difference!==0?'完成分摊（金额异常）':'';}
  function retry(o){
   if(!o.failure)return false;
   o.failure.attempts++;
@@ -135,7 +136,7 @@ const FinanceModel = (() => {
  function balances(o){
   const proceeds=netIncome(o),rows=ledger(o);
   // Only committed daily records are exposed by ledger; failed dates are excluded.
-  if(!rows.length)return {receivable:proceeds,liability:proceeds,revenue:0,financialExpenses:0};
+  if(!rows.length)return {receivable:proceeds,liability:proceeds??0,revenue:0,financialExpenses:0};
   const total=(account,normal)=>rows.filter(r=>r.account===account).reduce((sum,r)=>sum+(r.direction===normal?r.cents:-r.cents),0);
   const receivable=total(`平台应收账款-${o.provider}`,'借记');
   const revenue=total('主营业务收入','贷记');
@@ -145,6 +146,6 @@ const FinanceModel = (() => {
  function latestAllocationTimestamp(o){const rows=ledger(o);return rows.length?rows[rows.length-1].timestamp:null;}
  function latestAllocationTime(o,zone=PACIFIC){return formatTime(latestAllocationTimestamp(o),zone);}
 
- return {orders,countries,ledger,monthly,balances,netIncome,netRefund,asOf,eligible,allocationStatuses,allocationStatus,reconciliation,retry,firstAllocationTimestamp,latestAllocationTime,latestAllocationTimestamp,formatTime,dateInZone,dayEndTimestamp,pendingIncome,pendingRefunds,pendingRefundEntries};
+ return {orders,countries,ledger,monthly,balances,netIncome,netRefund,asOf,eligible,allocationStatuses,allocationStatus,anomalyRemark,entitlementExpiry,reconciliation,retry,firstAllocationTimestamp,latestAllocationTime,latestAllocationTimestamp,formatTime,dateInZone,dayEndTimestamp,pendingIncome,pendingRefunds,pendingRefundEntries};
 })();
 if(typeof module!=='undefined')module.exports=FinanceModel;
