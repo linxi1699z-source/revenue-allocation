@@ -111,7 +111,7 @@
       else fit(viewMode);
     } else reset();
     $('canvas-loading').hidden = true;
-    if (!panel.hidden) rules();
+    rules();
     $('sidebar').classList.remove('open');
     $('mobile-menu').setAttribute('aria-expanded','false');
     $('live-message').textContent = `已切换到流程${page.number}：${page.title}`;
