@@ -444,3 +444,7 @@ for i,thumb in enumerate(thumbs):sheet.paste(thumb,((i%4)*420,0 if i<4 else rowh
 sheet.save(out/'中文流程图总览.png')
 (out/'阅读说明.txt').write_text('仅根据功能说明—收入分摊逻辑绘制。\n全部可见文字为中文完整名词，不使用字母变量或编码接续。\n平台应收款已统一为平台应收账款。\n\n'+'\n\n'.join(p.title+'\n'+'\n'.join(p.notes) for p in pages))
 print(out/'收入分摊逻辑-中文流程图.drawio')
+
+# Keep the published HTML viewer in sync whenever the diagrams are regenerated.
+import runpy
+runpy.run_path(str(Path(__file__).with_name('build_flowchart_web.py')),run_name='__main__')
