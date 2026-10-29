@@ -28,7 +28,7 @@ texts = {
 'same': '支付成功时间与退款时间\n属于太平洋时间的同一天？',
 'different': '执行「跨日退款分摊」\n先处理待分摊收入，再处理待分摊退款\n根据退款类型进入全额退款或部分退款流程',
 'sameday': '执行「同日支付与退款分摊」\n收入与退款记录完整后，按净收入金额处理\n根据权益状态决定是否继续确认收入',
-'check': '更新已确认收入与剩余合同负债\n满足完成条件后，状态设为「完成分摊」\n完成后校验总借记金额与总贷记金额\n具体见「数据校验与分摊状态」流程',
+'check': '已完成分摊的订单执行两项校验\n检查剩余合同负债是否为0\n检查指定借贷净额是否等于已确认收入\n具体见「数据校验与分摊状态」流程',
 'end': '本次分摊结束；未完成订单等待下次执行',
 },
 'dates': {
@@ -126,17 +126,13 @@ texts = {
 'less': '退款后剩余收入小于已确认收入\n收入分摊状态设为「分摊异常」\n飞书预警并记录异常备注：\n部分退款后收入小于已确认收入',
 },
 'checks': {
-'start': '本次收入或退款分摊处理后',
-'balance': '该订单全部分摊明细的\n总借记金额＝总贷记金额？',
-'totals': '汇总该订单全部分摊明细金额\n总借记金额＝全部借记记录金额之和\n总贷记金额＝全部贷记记录金额之和',
-'passed': '金额校验通过',
-'update': '更新已确认收入\n已确认收入＝主营业务收入贷记总额\n－主营业务收入借记总额',
-'L': '更新剩余合同负债\n剩余合同负债＝财务费用借记总额－财务费用贷记总额\n＋平台应收账款借记总额－平台应收账款贷记总额\n－已确认收入',
-'finish': '本分支已要求完成分摊，或\n权益已过期，或剩余合同负债为 0？',
-'ongoing': '收入分摊状态设为「分摊中」\n继续按日进行收入分摊\n尚未生效或输入未齐时，等待满足条件',
-'amountbad': '记录异常备注：「完成分摊（金额异常）」\n发送飞书预警，等待排查',
-'completed': '完成收入分摊\n收入分摊状态设为「完成分摊」\n然后进行总借记、总贷记金额校验',
-'end': '本次分摊结束',
+'start': '每次将订单状态设置为「完成分摊」后',
+'zero': '完成分摊时\n剩余合同负债是否为0？',
+'liability_alert': '发送飞书预警\n完成分摊后，剩余合同负债非0。',
+'calc': '计算完成分摊校验金额\n完成分摊校验金额＝平台应收账款借记总额\n－平台应收账款贷记总额\n＋财务费用借记总额－财务费用贷记总额',
+'balance': '完成分摊校验金额\n＝已确认收入？',
+'amountbad': '发送飞书预警\n完成分摊后，借贷总额不等于已确认收入。',
+'end': '结束',
 }}
 
 meta = {
@@ -146,7 +142,7 @@ meta = {
 'sameday': ('四、同日支付与退款分摊','支付与退款为同一天时，必须同时具有收入与退款待分摊记录，才开始分摊。','原文第20至22页'),
 'fullrefund': ('五、跨日退款与全额退款分摊','先处理待分摊收入，再处理退款；本页展示跨日退款入口与全额退款，部分退款另见对应页面。','原文第22至23页、第26页'),
 'partial': ('六、部分退款分摊','退款后剩余收入取订单的净收入；与本笔退款处理前的已确认收入比较。','原文第23至25页'),
-'checks': ('七、数据校验与分摊状态','先更新余额并完成分摊，再校验该订单全部分摊明细的总借记金额与总贷记金额是否一致。','原文第26页及本次确认口径'),
+'checks': ('七、数据校验与分摊状态','每次设置为完成分摊时，均执行剩余合同负债与已确认收入两项校验；首项预警后仍继续第二项校验。','本次确认的完成分摊校验口径'),
 }
 notes = {
 'overview': [
@@ -170,9 +166,9 @@ notes = {
 '原文公式待确认：初始平台应收账款为100、已确认收入为20、剩余合同负债为80、本笔净退款额为10、退款后剩余收入为90时，已履约比例为20%。按原文公式，已确认收入退回金额为18，合同负债退回金额为负8，出现负的负债退回金额。图中保留原文，需确认后使用。',
 '部分退款后仍可使用权益时，按原文以净收入除以权益总时长计算新的每日预估收入。多笔退款需要明确每笔净收入的对应时点，以及新预估收入从哪一天开始应用。'],
 'checks': [
-'状态规则：存在支付成功时间时设为待分摊；首次有效分摊后进入分摊中，之后每日继续；权益到期或剩余合同负债为0时完成分摊；异常导致明细无法生成时设为分摊异常。',
-'金额校验时点：先完成分摊，再校验该订单全部分摊明细的总借记金额与总贷记金额是否相等。尚未完成分摊的订单不进入本项完成后校验。',
-'校验范围：只比较总借记金额与总贷记金额，不判断分摊记录是否完整，也不追加其他金额等式校验。金额不一致时，记录「完成分摊（金额异常）」并发送飞书预警。'],
+'触发规则：每一次将订单状态设置为「完成分摊」，都执行本页两项校验，覆盖所有收入分摊与退款分摊场景。',
+'执行顺序：先校验剩余合同负债是否为0；无论该项通过还是发送预警，都继续校验指定借贷净额是否等于已确认收入。两项均异常时，分别发送两条预警。',
+'金额口径：指定借贷净额为平台应收账款借记总额减贷记总额，加财务费用借记总额减贷记总额。使用该订单的累计分摊金额与已确认收入比较。'],
 }
 
 # Remove the upstream acquisition step; it is outside the requested section.
@@ -194,21 +190,18 @@ partial_page.edges=[e for e in partial_page.edges if e['s']!='refresh']
 for edge in partial_page.edges:
     if edge['t']=='refresh':edge['t']='expired'
 
-# Completion precedes the sole monetary validation; record-integrity checks are removed.
+# Every completion-status assignment triggers both checks, including after a first alert.
 checks_page=next(p for p in pages if p.id=='checks')
 checks_page.nodes={};checks_page.edges=[]
 for node_id,row,col,kind in [
-    ('start',0,0,'terminal'),('update',1,0,'process'),('L',2,0,'process'),
-    ('finish',3,0,'decision'),('ongoing',3,1,'process'),
-    ('completed',4,0,'process'),('totals',5,0,'process'),
-    ('balance',6,0,'decision'),('amountbad',6,1,'error'),
-    ('passed',7,0,'process'),('end',8,0,'terminal')]:
+    ('start',0,0,'terminal'),('zero',1,0,'decision'),('liability_alert',1,1,'error'),
+    ('calc',2,0,'process'),('balance',3,0,'decision'),('amountbad',3,1,'error'),
+    ('end',4,0,'terminal')]:
     checks_page.n(node_id,texts['checks'][node_id],row,col,kind)
-for a,b in [('start','update'),('update','L'),('L','finish'),
-            ('completed','totals'),('totals','balance'),('passed','end')]:checks_page.e(a,b)
-checks_page.e('finish','completed','是')
-checks_page.e('finish','ongoing','否',True)
-checks_page.e('balance','passed','是')
+for a,b in [('start','zero'),('liability_alert','calc'),('calc','balance')]:checks_page.e(a,b)
+checks_page.e('zero','calc','是')
+checks_page.e('zero','liability_alert','否',True)
+checks_page.e('balance','end','是')
 checks_page.e('balance','amountbad','否',True)
 
 move={
@@ -239,6 +232,8 @@ for p in pages:
     ordinal,name=p.title.split('、',1)
     p.title=ordinal+'、「'+name+'」'
     p.notes=notes[p.id]
+    if p.id!='checks':
+        p.notes=p.notes+['完成分摊校验：每次将订单状态设置为「完成分摊」，均执行七、「数据校验与分摊状态」中的两项校验；首项预警后仍继续第二项校验。']
     p.badges={}
     for node in p.nodes.values():
         assert node['id'] in texts[p.id], (p.id,node['id'])
