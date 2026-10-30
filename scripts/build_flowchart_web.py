@@ -47,7 +47,11 @@ def make_svg(model):
         points=[p for i,p in enumerate(points) if i==0 or p!=points[i-1]]
         assert all(a[0]==b[0] or a[1]==b[1] for a,b in zip(points,points[1:])),cell.get('id')
         bounds+=points
-        paths.append('<polyline points="'+' '.join(f'{x:g},{y:g}' for x,y in points)+'" fill="none" stroke="#7C8D9F" stroke-width="1.8" marker-end="url(#arrow)"/>')
+        returning=cell.get('source') in ('skipA','next') and cell.get('target')=='iterate'
+        arrow='return-arrow' if returning else 'arrow'
+        color='#526D7C' if returning else '#7C8D9F'
+        weight='2.2' if returning else '1.8'
+        paths.append('<polyline points="'+' '.join(f'{x:g},{y:g}' for x,y in points)+f'" fill="none" stroke="{color}" stroke-width="{weight}" marker-end="url(#{arrow})"/>')
         if cell.get('value'):
             (x,y),(nx,ny)=points[:2]
             lx=x+26 if nx!=x else x+17;ly=y-9 if nx!=x else y+27
@@ -76,7 +80,7 @@ def make_svg(model):
         bounds.extend([(x,y),(x+w,y+h)])
     width=max(x for x,y in bounds)+55
     height=max(y for x,y in bounds)+55-180
-    svg=f'<svg xmlns="http://www.w3.org/2000/svg" width="{width:g}" height="{height:g}" viewBox="0 180 {width:g} {height:g}" role="img" aria-label="收入分摊业务流程图"><defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#7C8D9F"/></marker></defs>'+''.join(paths+labels+shapes)+'</svg>'
+    svg=f'<svg xmlns="http://www.w3.org/2000/svg" width="{width:g}" height="{height:g}" viewBox="0 180 {width:g} {height:g}" role="img" aria-label="收入分摊业务流程图"><defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#7C8D9F"/></marker><marker id="return-arrow" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="10" markerHeight="10" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#526D7C"/></marker></defs>'+''.join(paths+labels+shapes)+'</svg>'
     return svg,width,height,details
 
 mxfile=ET.parse(ROOT/'收入分摊流程图.drawio').getroot()

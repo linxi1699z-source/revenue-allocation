@@ -340,7 +340,17 @@ def continuous_route(p,e):
     e['ports']=(.5,1,.5,0)
     below=any(n['id'] not in (e['s'],e['t'],p.final_id) and n['y']>=a['y']+a['h']
               and max(a['x'],n['x'])<min(a['x']+a['w'],n['x']+n['w']) for n in p.nodes.values())
-    if e.get('closing'):
+    if p.id=='normal' and e['s']=='skipA' and e['t']=='iterate':
+        # Give the returning branch its own visible arrow at the right of the node.
+        lane=a['x']+a['w']+60
+        pts=[(a['x']+a['w'],ay),(lane,ay),(lane,by),(b['x']+b['w'],by)]
+        e['ports']=(1,.5,1,.5)
+    elif p.id=='normal' and e['s']=='next' and e['t']=='iterate':
+        # The daily loop enters from the left instead of sharing the main-path arrow.
+        bottom=max(n['y']+n['h'] for n in p.nodes.values() if n['id']!=p.final_id)+60
+        pts=[start,(ax,bottom),(25,bottom),(25,by),(b['x'],by)]
+        e['ports']=(.5,1,0,.5)
+    elif e.get('closing'):
         direct=[start,end]
         right_exit=e['s'] in {
             'normal': {'ongoing'},
@@ -371,10 +381,6 @@ def continuous_route(p,e):
         lane=a['x']+a['w']+60
         pts=[(a['x']+a['w'],ay),(lane,ay),(lane,end[1]-60),(bx,end[1]-60),end]
         e['ports']=(1,.5,.5,0)
-    elif p.id=='normal' and e['s']=='next':
-        # The daily loop returns to the actual date iterator along the left margin.
-        bottom=max(n['y']+n['h'] for n in p.nodes.values() if n['id']!=p.final_id)+60
-        pts=[start,(ax,bottom),(25,bottom),(25,b['y']-60),(bx,b['y']-60),end]
     elif (p.id=='overview' and e['s'] in ('normal','different')) or (p.id=='fullrefund' and e['s']=='afterdone'):
         # Bypass later branch boxes; join the common next step in its upper gap.
         lane=1530
