@@ -12,15 +12,8 @@
   let dragged = false;
   let selected = null;
   let viewMode = 'reading';
-  const workspace = document.querySelector('.workspace');
-  const viewStates = new Map();
-  const groups = [[0, '起始与准备'], [2, '收入与退款分摊'], [6, '完成与校验']];
   const escaped = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
-  $('flow-menu').innerHTML = pages.map((page, i) => {
-    const group = groups.find(([index]) => index === i);
-    return (group ? `<div class="menu-group-label">${group[1]}</div>` : '') + `<a class="flow-menu-item" href="#${page.id}" data-page="${page.id}"><span class="menu-number">${String(i+1).padStart(2,'0')}</span><span class="menu-name">${escaped(page.title)}</span></a>`;
-  }).join('');
   $('fullscreen-flow-tabs').innerHTML = pages.map(page => `<a class="fullscreen-flow-tab" href="#${page.id}" data-page="${page.id}"><span class="flow-tab-number">流程${'一二三四五六七'[page.number-1]}</span><span>${escaped(page.title)}</span></a>`).join('');
   function syncZoom() {
     scale = Math.max(.01, Math.min(2, scale));
@@ -54,12 +47,7 @@
     if(mode==='all')scale=Math.min(scale,(canvas.clientHeight-padding)/current.height);
     syncZoom();canvas.scrollTo(0,0);
   }
-  function reset() {
-    viewMode = 'reading';
-    scale = Math.min(.85, Math.max(.5, (canvas.clientWidth-60)/1550));
-    syncZoom();
-    canvas.scrollTo(0,0);
-  }
+  function reset() { fit('all'); }
   function setPanel(show) {
     panel.hidden = !show;
     $('rules-toggle').setAttribute('aria-expanded', String(show));
@@ -87,37 +75,22 @@
     const id = location.hash.slice(1);
     const page = pages.find(page=>page.id===id) || pages[0];
     if (current?.id===page.id) return;
-    if (current) viewStates.set(current.id,{scale,mode:viewMode,left:canvas.scrollLeft,top:canvas.scrollTop});
     current = page;
     selected = null;
-    syncDiagramTitle();
+    $('diagram-title').textContent = `流程${'一二三四五六七'[page.number-1]} ${page.title}`;
     document.title = `${page.title} · 收入分摊业务流程`;
-    $('flow-title').textContent = page.title;
     $('flow-description').textContent = page.description;
-    $('flow-eyebrow').textContent = `收入分摊 / 流程${'一二三四五六七'[page.number-1]}`;
-    $('current-number').textContent = String(page.number).padStart(2,'0');
     $('node-count').textContent = `${page.nodes.length} 个节点 · ${page.decisions} 个判断`;
     $('flow-source').textContent = `依据：${page.source}`;
-    $('previous-flow').disabled = page.number===1;
-    $('next-flow').disabled = page.number===pages.length;
     document.querySelectorAll('[data-page]').forEach(link=>{
       const active = link.dataset.page===page.id;
       link.classList.toggle('active',active);
       if (active) link.setAttribute('aria-current','page'); else link.removeAttribute('aria-current');
     });
     scene.innerHTML = page.svg;
-    const state = viewStates.get(page.id);
-    if (document.fullscreenElement===workspace || workspace.classList.contains('expanded')) {
-      fit('all');
-    } else if (state) {
-      viewMode=state.mode||'reading';
-      if(viewMode==='reading'){scale = state.scale;syncZoom();canvas.scrollTo(state.left,state.top);}
-      else fit(viewMode);
-    } else reset();
     $('canvas-loading').hidden = true;
     rules();
-    $('sidebar').classList.remove('open');
-    $('mobile-menu').setAttribute('aria-expanded','false');
+    fit('all');
     $('live-message').textContent = `已切换到流程${page.number}：${page.title}`;
   }
 
@@ -125,33 +98,9 @@
   $('zoom-in').addEventListener('click',()=>zoom(scale+.15));
   $('fit-width').addEventListener('click',()=>fit('width'));
   $('fit-all').addEventListener('click',()=>fit('all'));
-  function syncDiagramTitle() {
-    const expanded=Boolean(document.fullscreenElement===workspace || workspace.classList.contains('expanded'));
-    $('diagram-title').textContent=expanded && current ? `流程${'一二三四五六七'[current.number-1]} ${current.title}` : '业务流程图';
-  }
-  function fullscreenState() {
-    const expanded=Boolean(document.fullscreenElement===workspace || workspace.classList.contains('expanded'));
-    $('fullscreen').textContent=expanded?'退出全屏':'全屏查看';
-    $('fullscreen').setAttribute('aria-pressed',String(expanded));
-    syncDiagramTitle();
-    requestAnimationFrame(()=>fit('all'));
-  }
-  $('fullscreen').addEventListener('click',async()=>{
-    if(document.fullscreenElement===workspace){await document.exitFullscreen();return;}
-    if(workspace.classList.contains('expanded')){workspace.classList.remove('expanded');fullscreenState();return;}
-    if(workspace.requestFullscreen){try{await workspace.requestFullscreen();return;}catch{/* Use the page overlay when native full screen is unavailable. */}}
-    workspace.classList.add('expanded');fullscreenState();
-  });
-  document.addEventListener('fullscreenchange',fullscreenState);
   $('reset-view').addEventListener('click',reset);
   $('rules-toggle').addEventListener('click',()=>{if(panel.hidden || selected)rules();else setPanel(false);});
   $('details-close').addEventListener('click',()=>setPanel(false));
-  $('previous-flow').addEventListener('click',()=>{if(current.number>1)location.hash=pages[current.number-2].id;});
-  $('next-flow').addEventListener('click',()=>{if(current.number<pages.length)location.hash=pages[current.number].id;});
-  $('mobile-menu').addEventListener('click',()=>{
-    const open=$('sidebar').classList.toggle('open');
-    $('mobile-menu').setAttribute('aria-expanded',String(open));
-  });
   canvas.addEventListener('wheel',event=>{
     if (!event.ctrlKey && !event.metaKey) return;
     event.preventDefault();
@@ -179,9 +128,7 @@
     const node=event.target.closest('[data-node]');
     if(node){event.preventDefault();nodeDetail(node.dataset.node);}
   });
-  document.addEventListener('keydown',event=>{
-    if(event.key==='Escape'){setPanel(false);$('sidebar').classList.remove('open');$('mobile-menu').setAttribute('aria-expanded','false');if(workspace.classList.contains('expanded')){workspace.classList.remove('expanded');fullscreenState();}}
-  });
+  document.addEventListener('keydown',event=>{if(event.key==='Escape')setPanel(false);});
   window.addEventListener('hashchange',render);
   render();
   let resizeFrame;
