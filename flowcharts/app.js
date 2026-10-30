@@ -21,6 +21,7 @@
     const group = groups.find(([index]) => index === i);
     return (group ? `<div class="menu-group-label">${group[1]}</div>` : '') + `<a class="flow-menu-item" href="#${page.id}" data-page="${page.id}"><span class="menu-number">${String(i+1).padStart(2,'0')}</span><span class="menu-name">${escaped(page.title)}</span></a>`;
   }).join('');
+  $('fullscreen-flow-tabs').innerHTML = pages.map(page => `<a class="fullscreen-flow-tab" href="#${page.id}" data-page="${page.id}"><span class="flow-tab-number">流程${'一二三四五六七'[page.number-1]}</span><span>${escaped(page.title)}</span></a>`).join('');
   function syncZoom() {
     scale = Math.max(.01, Math.min(2, scale));
     scene.style.width = `${current.width * scale}px`;
@@ -106,7 +107,9 @@
     });
     scene.innerHTML = page.svg;
     const state = viewStates.get(page.id);
-    if (state) {
+    if (document.fullscreenElement===workspace || workspace.classList.contains('expanded')) {
+      fit('all');
+    } else if (state) {
       viewMode=state.mode||'reading';
       if(viewMode==='reading'){scale = state.scale;syncZoom();canvas.scrollTo(state.left,state.top);}
       else fit(viewMode);
