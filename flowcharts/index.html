@@ -6,8 +6,8 @@
   <meta name="description" content="订阅收入分摊的完整业务流程，按收入登记、日分摊、退款处理与完成校验逐项查看。">
   <title>收入分摊 · 业务流程</title>
   <link rel="stylesheet" href="styles.css?v=fb96d1b88b89">
-  <script defer src="data.js?v=2670c9e963a9"></script>
-  <script defer src="app.js?v=5aa7614e3ed3"></script>
+  <script defer src="data.js?v=7eae0293cd7d"></script>
+  <script defer src="app.js?v=7f306c54745a"></script>
 </head>
 <body>
   <aside class="sidebar" id="sidebar">
@@ -21,7 +21,7 @@
     <main>
       <section class="page-heading"><div><div class="eyebrow heading-eyebrow" id="flow-eyebrow">收入分摊 / 流程一</div><h1 id="flow-title">收入分摊入口与场景分流</h1><p id="flow-description"></p></div><div class="page-counter"><span id="current-number">01</span><small>/ 07</small></div></section>
       <section class="workspace" aria-label="流程查看区域">
-        <div class="workspace-header"><div class="diagram-tab"><span class="tab-icon" aria-hidden="true">⑂</span>业务流程图<span class="readonly-chip">只读查看</span><span id="node-count" class="count-chip"></span></div><div class="workspace-actions"><button id="rules-toggle" class="button" aria-expanded="true" aria-controls="details-panel">规则与备注</button><button id="fullscreen" class="button" aria-pressed="false">全屏查看</button></div></div>
+        <div class="workspace-header"><div class="diagram-tab"><span class="tab-icon" aria-hidden="true">⑂</span><span id="diagram-title">业务流程图</span><span class="readonly-chip">只读查看</span><span id="node-count" class="count-chip"></span></div><div class="workspace-actions"><button id="rules-toggle" class="button" aria-expanded="true" aria-controls="details-panel">规则与备注</button><button id="fullscreen" class="button" aria-pressed="false">全屏查看</button></div></div>
         <div class="diagram-toolbar"><div class="legend" aria-label="图例"><span><i class="legend-decision"></i>判断</span><span><i class="legend-formula"></i>公式</span><span><i class="legend-debit"></i>借记</span><span><i class="legend-credit"></i>贷记</span></div><div class="view-controls" aria-label="流程图视图控制"><button id="zoom-out" title="缩小" aria-label="缩小">−</button><output id="zoom-value" aria-live="polite">75%</output><button id="zoom-in" title="放大" aria-label="放大">＋</button><span class="control-divider"></span><button id="fit-width">适应宽度</button><button id="fit-all">完整流程</button><button id="reset-view">重置</button></div></div>
         <div class="canvas-layout"><div class="canvas" id="canvas" tabindex="0" aria-label="流程图画布，可拖动平移或使用视图控制缩放"><div class="scene" id="scene"></div><div class="canvas-loading" id="canvas-loading">正在加载流程图…</div></div><aside class="details-panel" id="details-panel" aria-label="规则与步骤详情"><div class="details-header"><h2 id="details-title">规则与备注</h2><button id="details-close" aria-label="关闭详情">×</button></div><div id="details-content"></div></aside></div>
         <div class="workspace-footer"><span><span class="hint-dot"></span>拖动画布平移 · 点击节点查看详情 · Ctrl / ⌘ + 滚轮缩放</span><div><button id="previous-flow" aria-label="上一个流程">← 上一流程</button><button id="next-flow" aria-label="下一个流程">下一流程 →</button></div></div>

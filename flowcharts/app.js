@@ -89,6 +89,7 @@
     if (current) viewStates.set(current.id,{scale,mode:viewMode,left:canvas.scrollLeft,top:canvas.scrollTop});
     current = page;
     selected = null;
+    syncDiagramTitle();
     document.title = `${page.title} · 收入分摊业务流程`;
     $('flow-title').textContent = page.title;
     $('flow-description').textContent = page.description;
@@ -121,10 +122,15 @@
   $('zoom-in').addEventListener('click',()=>zoom(scale+.15));
   $('fit-width').addEventListener('click',()=>fit('width'));
   $('fit-all').addEventListener('click',()=>fit('all'));
+  function syncDiagramTitle() {
+    const expanded=Boolean(document.fullscreenElement===workspace || workspace.classList.contains('expanded'));
+    $('diagram-title').textContent=expanded && current ? `流程${'一二三四五六七'[current.number-1]} ${current.title}` : '业务流程图';
+  }
   function fullscreenState() {
     const expanded=Boolean(document.fullscreenElement===workspace || workspace.classList.contains('expanded'));
     $('fullscreen').textContent=expanded?'退出全屏':'全屏查看';
     $('fullscreen').setAttribute('aria-pressed',String(expanded));
+    syncDiagramTitle();
     requestAnimationFrame(()=>fit('all'));
   }
   $('fullscreen').addEventListener('click',async()=>{

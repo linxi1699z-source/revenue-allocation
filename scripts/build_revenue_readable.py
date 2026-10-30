@@ -152,7 +152,6 @@ DATA_VALIDATION_NOTES = [
 '数据校验—本次记录：每次产生分摊记录，都校验本次记录的借记总额是否等于贷记总额。不相等时发送飞书预警：「本次产生的分摊记录，借贷总额不相等。」此项按本次产生的记录汇总。',
 '数据校验—剩余合同负债：每一次将订单状态设置为「完成分摊」，都校验剩余合同负债是否为0。非0时发送飞书预警：「完成分摊后，剩余合同负债非0。」',
 '数据校验—已确认收入：每一次将订单状态设置为「完成分摊」，都校验平台应收账款借记总额－平台应收账款贷记总额＋财务费用借记总额－财务费用贷记总额，是否等于已确认收入。不相等时发送飞书预警：「完成分摊后，借贷总额不等于已确认收入。」此项使用该订单的累计分摊金额。',
-'数据校验—执行顺序：先校验本次记录的借贷总额，再判断本次是否设置为「完成分摊」。设置时依次执行剩余合同负债与已确认收入两项完成校验；剩余合同负债校验预警后仍继续收入金额校验，两项异常分别预警。本次未设置为完成分摊时，不执行这两项完成校验。',
 ]
 
 notes = {
@@ -343,11 +342,21 @@ def continuous_route(p,e):
               and max(a['x'],n['x'])<min(a['x']+a['w'],n['x']+n['w']) for n in p.nodes.values())
     if e.get('closing'):
         direct=[start,end]
-        if ax==bx and not scope['crosses'](direct,list(p.nodes.values()),(e['s'],e['t'])):
+        right_exit=e['s'] in {
+            'normal': {'ongoing'},
+            'fullrefund': {'wait'},
+            'partial': {'keep'},
+            'checks': {'amountbad'},
+        }.get(p.id,set())
+        if p.id=='partial' and e['s']=='equalend':
+            # This branch has no later steps below it: descend directly to the end.
+            pts=[start,(ax,by),(b['x'],by)]
+            e['ports']=(.5,1,0,.5)
+        elif ax==bx and not scope['crosses'](direct,list(p.nodes.values()),(e['s'],e['t'])):
             pts=direct
         else:
             lane=max(n['x']+n['w'] for n in p.nodes.values())+100
-            if below:
+            if below or right_exit:
                 pts=[(a['x']+a['w'],ay),(lane,ay),(lane,end[1]-60),(bx,end[1]-60),end]
                 e['ports']=(1,.5,.5,0)
             else:
