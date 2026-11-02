@@ -1,5 +1,6 @@
 const $=s=>document.querySelector(s), money=n=>n===null?'<span class="pending-amount">待匹配</span>':(n/1000).toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:3});
 const state={filtered:[...FinanceModel.orders],page:1,size:10,detailPage:1,detailSize:10,tab:'daily',order:null,timezone:'America/Los_Angeles',pendingOrder:null,ledgerFilters:{daily:{},monthly:{}}};
+$('#allocation-cutoff').textContent=`收入分摊截止时间：${FinanceModel.incomeCutoffDate()} 23:59:59（太平洋时间）`;
 const time=n=>n===null||n===undefined?'—':`<span class="timezone-value">${FinanceModel.formatTime(n,state.timezone).slice(0,16)}</span>`;
 const allocationDate=(o,first=false)=>{const timestamp=first?FinanceModel.firstAllocationTimestamp(o):FinanceModel.latestAllocationTimestamp(o);return timestamp===null?'—':`<span class="timezone-value">${FinanceModel.formatTime(timestamp,state.timezone).slice(0,16)}</span>`;};
 let timezoneFeedbackTimer;
@@ -33,7 +34,7 @@ function setDefaultPaymentDates(){
  syncRangeLabels();
 }
 $('#search-form').onreset=()=>{setTimeout(()=>{$('#search-error').textContent='';state.filtered=[...FinanceModel.orders];state.page=1;document.querySelectorAll('.multi-select').forEach(b=>b.classList.remove('open'));document.querySelectorAll('.multi-select input').forEach(i=>i.dispatchEvent(new Event('change',{bubbles:true})));setDefaultPaymentDates();$('#search-form').requestSubmit();});};
-function renderDetail(){const o=state.order;if(!o)return;const b=FinanceModel.allocationStatus(o)==='待分摊'?{receivable:0,liability:0,revenue:0}:FinanceModel.balances(o);const noAllocationActions=['免费试用','赠送'].includes(o.discountType);$('#ledger-add').hidden=noAllocationActions;$('#ledger-complete').hidden=noAllocationActions;$('#ledger-complete').disabled=FinanceModel.allocationStatus(o)==='完成分摊';$('#detail-summary').innerHTML=`<h2>${o.order} ${allocationBadge(o)} ${badge(o)}</h2><div class="summary-grid">${[['平台订单ID',o.platform],['产品ID',o.product],['支付服务商',o.provider],['币种',o.currency],['支付时间',time(o.paid)],['净收入',money(FinanceModel.netIncome(o))],['平台应收账款',money(b.receivable)],['合同负债',money(b.liability)],['已确认收入',money(b.revenue)]].map(([t,v])=>`<div class="summary-item"><span>${t}${['平台应收账款','合同负债','已确认收入'].includes(t)?' <button type="button" class="info-icon" data-tooltip="每日执行分摊程序后更新。" aria-label="每日执行分摊程序后更新。">ⓘ</button>':''}</span><strong>${v}</strong></div>`).join('')}</div>`;let rows=FinanceModel.ledger(o).map((r,index)=>({...r,index}));if(state.tab==='monthly')rows=FinanceModel.monthly(rows);rows.sort((a,b)=>b.timestamp-a.timestamp);const filters=state.ledgerFilters[state.tab];rows=rows.filter(r=>{const local=FinanceModel.formatTime(r.timestamp,state.timezone).slice(0,10);return (!filters.start||local>=filters.start)&&(!filters.end||local<=filters.end)&&(!filters.account||r.account===filters.account)&&(!filters.direction||r.direction===filters.direction);});document.querySelectorAll('[data-ledger-filter]').forEach(button=>{const key=button.dataset.ledgerFilter;button.classList.toggle('filter-active',key==='date'?!!(filters.start||filters.end):!!filters[key]);});document.querySelectorAll('[data-tab]').forEach(t=>{t.classList.toggle('selected',t.dataset.tab===state.tab);t.setAttribute('aria-selected',String(t.dataset.tab===state.tab));});state.visibleLedger=rows;paginate('detail-pagination',rows.length,true);$('#ledger-body').innerHTML=rows.slice((state.detailPage-1)*state.detailSize,state.detailPage*state.detailSize).map((r,i)=>`<tr><td>${time(r.timestamp)}</td><td><span class="account-name">${r.account}</span>${state.tab==='daily'&&r.manual?' <span class="manual-tag">人工添加</span>':''}${r.event==='refund'?' <span class="refund-note">全额退款</span>':''}</td><td><span class="direction ${r.direction==='贷记'?'credit':''}">${r.direction}</span></td><td>${o.currency}</td><td class="money">${money(r.cents)}</td><td><button type="button" class="ledger-edit" data-ledger-edit="${(state.detailPage-1)*state.detailSize+i}">编辑</button> <button type="button" class="ledger-edit" ${r.manual?`data-ledger-delete="${r.id}"`:'disabled'}>删除</button></td></tr>`).join('')||'<tr><td colspan="6" class="empty-cell">尚未生成分摊记录</td></tr>';}
+function renderDetail(){const o=state.order;if(!o)return;const b=FinanceModel.allocationStatus(o)==='待分摊'?{receivable:0,liability:0,revenue:0}:FinanceModel.balances(o);const noAllocationActions=['免费试用','赠送'].includes(o.discountType);$('#ledger-add').hidden=noAllocationActions||FinanceModel.allocationStatus(o)!=='分摊异常';$('#ledger-complete').hidden=noAllocationActions;$('#ledger-complete').disabled=FinanceModel.allocationStatus(o)==='完成分摊';$('#detail-summary').innerHTML=`<h2>${o.order} ${allocationBadge(o)} ${badge(o)}</h2><div class="summary-grid">${[['平台订单ID',o.platform],['产品ID',o.product],['支付服务商',o.provider],['币种',o.currency],['支付时间',time(o.paid)],['净收入',money(FinanceModel.netIncome(o))],['平台应收账款',money(b.receivable)],['合同负债',money(b.liability)],['已确认收入',money(b.revenue)]].map(([t,v])=>`<div class="summary-item"><span>${t}${['平台应收账款','合同负债','已确认收入'].includes(t)?' <button type="button" class="info-icon" data-tooltip="每日执行分摊程序后更新。" aria-label="每日执行分摊程序后更新。">ⓘ</button>':''}</span><strong>${v}</strong></div>`).join('')}</div>`;let rows=FinanceModel.ledger(o).map((r,index)=>({...r,index}));if(state.tab==='monthly')rows=FinanceModel.monthly(rows);rows.sort((a,b)=>b.timestamp-a.timestamp);const filters=state.ledgerFilters[state.tab];rows=rows.filter(r=>{const local=FinanceModel.formatTime(r.timestamp,state.timezone).slice(0,10);return (!filters.start||local>=filters.start)&&(!filters.end||local<=filters.end)&&(!filters.account||r.account===filters.account)&&(!filters.direction||r.direction===filters.direction);});document.querySelectorAll('[data-ledger-filter]').forEach(button=>{const key=button.dataset.ledgerFilter;button.classList.toggle('filter-active',key==='date'?!!(filters.start||filters.end):!!filters[key]);});document.querySelectorAll('[data-tab]').forEach(t=>{t.classList.toggle('selected',t.dataset.tab===state.tab);t.setAttribute('aria-selected',String(t.dataset.tab===state.tab));});state.visibleLedger=rows;paginate('detail-pagination',rows.length,true);$('#ledger-body').innerHTML=rows.slice((state.detailPage-1)*state.detailSize,state.detailPage*state.detailSize).map((r,i)=>`<tr><td>${time(r.timestamp)}</td><td><span class="account-name">${r.account}</span>${state.tab==='daily'&&r.manual?' <span class="manual-tag">人工添加</span>':''}${r.event==='refund'?' <span class="refund-note">全额退款</span>':''}</td><td><span class="direction ${r.direction==='贷记'?'credit':''}">${r.direction}</span></td><td>${o.currency}</td><td class="money">${money(r.cents)}</td><td><button type="button" class="ledger-edit" data-ledger-edit="${(state.detailPage-1)*state.detailSize+i}">编辑</button> <button type="button" class="ledger-edit" ${r.manual?`data-ledger-delete="${r.id}"`:'disabled'}>删除</button></td></tr>`).join('')||'<tr><td colspan="6" class="empty-cell">尚未生成分摊记录</td></tr>';}
 document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{state.tab=b.dataset.tab;state.detailPage=1;renderDetail();});$('#back').onclick=()=>location.hash='income';
 function renderPending(){
  const o=state.pendingOrder;if(!o)return;
@@ -204,19 +205,50 @@ document.addEventListener('toggle',e=>{if(e.newState==='closed'&&rangeDraft&&e.t
 syncRangeLabels();
 
 let manualDeleteId=null;
+const PACIFIC_ZONE='America/Los_Angeles';
+const manualEntries=$('#manual-entries');
+function updateManualEntryControls(){
+ const rows=[...manualEntries.querySelectorAll('.manual-entry')];
+ rows.forEach((row,index)=>{
+  row.querySelector('.manual-entry-title').textContent=`计提项 ${index+1}`;
+  row.querySelector('[data-remove-manual]').disabled=rows.length<2;
+ });
+}
+function addManualEntry(){
+ manualEntries.insertAdjacentHTML('beforeend',`<div class="manual-entry"><div class="manual-entry-header"><strong class="manual-entry-title"></strong><button type="button" data-remove-manual aria-label="删除此计提项">删除</button></div><label><span><b class="required" aria-hidden="true">*</b> 计提项</span><select name="account"><option value="">请选择计提项</option><option>平台应收账款</option><option>合同负债</option><option>主营业务收入</option><option>财务费用</option></select></label><label><span><b class="required" aria-hidden="true">*</b> 资金方向</span><select name="direction"><option value="">请选择资金方向</option><option>借记</option><option>贷记</option></select></label><label><span><b class="required" aria-hidden="true">*</b> 金额/天</span><div class="manual-amount"><input name="amount" inputmode="decimal" aria-label="金额/天" placeholder="请输入金额"><span>${state.order.currency}</span></div></label></div>`);
+ updateManualEntryControls();
+}
+$('#manual-add-entry').onclick=addManualEntry;
+manualEntries.onclick=e=>{
+ const button=e.target.closest('[data-remove-manual]');
+ if(!button||button.disabled)return;
+ button.closest('.manual-entry').remove();updateManualEntryControls();
+};
 $('#ledger-add').onclick=()=>{
- const form=$('#ledger-add-form');form.reset();form.elements.startDate.value='';form.elements.endDate.value='';$('#manual-currency').textContent=state.order.currency;$('#ledger-add-error').textContent='';
- form.querySelectorAll('select').forEach(el=>el.dispatchEvent(new Event('change',{bubbles:true})));$('#ledger-add-dialog').showModal();
+ const form=$('#ledger-add-form');form.reset();manualEntries.replaceChildren();addManualEntry();
+ const cutoff=FinanceModel.incomeCutoffDate();
+ const paidDate=FinanceModel.dateInZone(state.order.paid,PACIFIC_ZONE);
+ form.elements.startDate.min=paidDate;form.elements.startDate.max=cutoff;
+ form.elements.endDate.min=paidDate;form.elements.endDate.max=cutoff;
+ form.elements.startDate.onchange=()=>{const start=form.elements.startDate.value;form.elements.endDate.min=start?new Date(Date.parse(start+'T00:00:00Z')+86400000).toISOString().slice(0,10):paidDate;if(form.elements.endDate.value&&form.elements.endDate.value<form.elements.endDate.min)form.elements.endDate.value='';};
+ $('#manual-cutoff').textContent=`收入截止日期：${cutoff} 23:59:59（太平洋时间）`;
+ $('#ledger-add-error').textContent=paidDate>cutoff?'支付成功时间晚于收入截止日期，暂无可新增的统计日期':'';
+ form.querySelector('button[type=submit]').disabled=paidDate>cutoff;
+ $('#ledger-add-dialog').showModal();
 };
 for(const id of ['ledger-add-cancel','ledger-add-close'])$('#'+id).onclick=()=>$('#ledger-add-dialog').close();
 $('#ledger-add-form').onsubmit=e=>{
- e.preventDefault();const f=e.target,raw=f.elements.amount.value.trim();$('#ledger-add-error').textContent='';
+ e.preventDefault();const f=e.target,entries=[];$('#ledger-add-error').textContent='';
  if(!f.elements.startDate.value){$('#ledger-add-error').textContent='请选择统计开始时间';return;}
- if(!f.elements.account.value){$('#ledger-add-error').textContent='请选择计提项';return;}
- if(!f.elements.direction.value){$('#ledger-add-error').textContent='请选择资金方向';return;}
- if(!raw){$('#ledger-add-error').textContent='请输入金额';return;}
- if(!/^\d+(?:\.\d{1,3})?$/.test(raw)){$('#ledger-add-error').textContent='请输入非负金额，最多保留 3 位小数';return;}
- try{FinanceModel.addManualRecords(state.order,{startDate:f.elements.startDate.value,endDate:f.elements.endDate.value||f.elements.startDate.value,account:f.elements.account.value,direction:f.elements.direction.value,cents:Math.round(Number(raw)*1000)},state.timezone);}catch(error){$('#ledger-add-error').textContent=error.message;return;}
+ for(const row of manualEntries.querySelectorAll('.manual-entry')){
+  const account=row.querySelector('[name=account]').value,direction=row.querySelector('[name=direction]').value,raw=row.querySelector('[name=amount]').value.trim();
+  if(!account){$('#ledger-add-error').textContent='请选择计提项';return;}
+  if(!direction){$('#ledger-add-error').textContent='请选择资金方向';return;}
+  if(!raw){$('#ledger-add-error').textContent='请输入金额';return;}
+  if(!/^\d+(?:\.\d{1,3})?$/.test(raw)){$('#ledger-add-error').textContent='请输入非负金额，最多保留 3 位小数';return;}
+  entries.push({account,direction,cents:Math.round(Number(raw)*1000)});
+ }
+ try{FinanceModel.addManualRecords(state.order,{startDate:f.elements.startDate.value,endDate:f.elements.endDate.value,entries});}catch(error){$('#ledger-add-error').textContent=error.message;return;}
  $('#ledger-add-dialog').close();renderDetail();renderList();
 };
 $('#manual-delete-cancel').onclick=()=>$('#manual-delete-dialog').close();
