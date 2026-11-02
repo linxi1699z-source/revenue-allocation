@@ -261,7 +261,22 @@ const FinanceModel = (() => {
   return true;
  }
 
- function monthly(rows){const manual=rows.filter(r=>r.manual).map(r=>({...r}));rows=rows.filter(r=>!r.manual);const groups=new Map(),accounts=[...new Set(rows.map(r=>r.account))],months=[...new Set(rows.map(r=>r.date.slice(0,7)))];for(const date of months)for(const account of accounts)groups.set(date+'|'+account,{date,account,net:0});for(const r of rows){const month=r.date.slice(0,7),key=month+'|'+r.account;const g=groups.get(key)||{date:month,account:r.account,net:0};g.net+=(r.direction==='借记'?1:-1)*r.cents;groups.set(key,g);}return [...groups.values()].filter(g=>!(g.account==='平台应收账款'&&g.net===0)).map(g=>({date:g.date,timestamp:dayEndTimestamp(new Date(Date.UTC(Number(g.date.slice(0,4)),Number(g.date.slice(5,7)),0)).toISOString().slice(0,10)),account:g.account,direction:g.net>0?'借记':g.net<0?'贷记':g.account.startsWith('平台应收账款')?'贷记':'借记',cents:Math.abs(g.net)})).concat(manual).sort((a,b)=>a.timestamp-b.timestamp);}
+ function monthly(rows){
+  const groups=new Map();
+  for(const r of rows){
+   const month=r.date.slice(0,7),key=month+'|'+r.account;
+   const group=groups.get(key)||{date:month,account:r.account,net:0};
+   group.net+=(r.direction==='借记'?1:-1)*r.cents;
+   groups.set(key,group);
+  }
+  return [...groups.values()].filter(g=>!(g.account==='平台应收账款'&&g.net===0)).map(g=>({
+   date:g.date,
+   timestamp:dayEndTimestamp(new Date(Date.UTC(Number(g.date.slice(0,4)),Number(g.date.slice(5,7)),0)).toISOString().slice(0,10)),
+   account:g.account,
+   direction:g.net>0?'借记':g.net<0?'贷记':g.account.startsWith('平台应收账款')?'贷记':'借记',
+   cents:Math.abs(g.net)
+  })).sort((a,b)=>a.timestamp-b.timestamp);
+ }
  function balances(o){
   const proceeds=netIncome(o),rows=ledger(o);
   // Only committed daily records are exposed by ledger; failed dates are excluded.
