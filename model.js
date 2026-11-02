@@ -235,9 +235,14 @@ const FinanceModel = (() => {
   return rows;
  }
  function reconciliation(o){const rows=ledger(o);const total=(name,normal)=>rows.filter(r=>r.account===name).reduce((s,r)=>s+(r.direction===normal?r.cents:-r.cents),0);const receivable=total('平台应收账款','借记'),financialExpenses=total('财务费用','借记'),revenue=total('主营业务收入','贷记');return {receivable,financialExpenses,revenue,difference:receivable+financialExpenses-revenue};}
+ function completeAllocation(o){
+  if(reconciliation(o).difference!==0)throw Error('完成分摊后，借贷总额不等于已确认收入。');
+  o.manualCompleted=true;o.editedAllocationStatus='完成分摊';return true;
+ }
  function entitlementExpiry(o){return o.expiresAt??dayEndTimestamp(new Date(Date.parse(dateInZone(o.paid)+'T00:00:00Z')+(o.days-1)*DAY).toISOString().slice(0,10));}
  function allocationStatus(o){
   if(!eligible(o))return null;
+  if(o.manualCompleted)return '完成分摊';
   if(o.resetPending)return '待分摊';
   if(o.editedAllocationStatus)return o.editedAllocationStatus;
   if(o.failure)return '分摊异常';
@@ -270,6 +275,6 @@ const FinanceModel = (() => {
  function latestAllocationTimestamp(o){const rows=ledger(o);return rows.length?rows[rows.length-1].timestamp:null;}
  function latestAllocationTime(o,zone=PACIFIC){return formatTime(latestAllocationTimestamp(o),zone);}
 
- return {orders,countries,addManualRecord,addManualRecords,deleteManualRecord,editLedger,resetEligibility,resetAllocation,updateAmounts,incomeBasis,ledger,monthly,balances,netIncome,netRefund,asOf,eligible,allocationStatuses,allocationStatus,anomalyRemark,entitlementExpiry,reconciliation,retry,firstAllocationTimestamp,latestAllocationTime,latestAllocationTimestamp,formatTime,dateInZone,dayEndTimestamp,pendingIncome,pendingRefunds,pendingRefundEntries};
+ return {orders,countries,completeAllocation,addManualRecord,addManualRecords,deleteManualRecord,editLedger,resetEligibility,resetAllocation,updateAmounts,incomeBasis,ledger,monthly,balances,netIncome,netRefund,asOf,eligible,allocationStatuses,allocationStatus,anomalyRemark,entitlementExpiry,reconciliation,retry,firstAllocationTimestamp,latestAllocationTime,latestAllocationTimestamp,formatTime,dateInZone,dayEndTimestamp,pendingIncome,pendingRefunds,pendingRefundEntries};
 })();
 if(typeof module!=='undefined')module.exports=FinanceModel;
