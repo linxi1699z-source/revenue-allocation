@@ -39,7 +39,7 @@ const FinanceModel = (() => {
   {id:'refund-10-a',timestamp:orders[10].refund,cents:200,amount:1450,allocationStarted:false},
   {id:'refund-10-history',timestamp:orders[10].refund-DAY,cents:100,amount:666,allocationStarted:true}
  ];
- function pendingIncome(o){return eligible(o)&&o.stage!=='waiting'&&!ledger(o).some(r=>r.event==='initial')?[{order:o.order,platform:o.platform,cents:incomeBasis(o),date:dateInZone(o.paid),timestamp:o.paid}]:[];}
+ function pendingIncome(o){return eligible(o)&&!ledger(o).some(r=>r.event==='initial')?[{order:o.order,platform:o.platform,cents:o.stage==='waiting'?null:incomeBasis(o),date:dateInZone(o.paid),timestamp:o.paid}]:[];}
  function pendingRefundEntries(o){
   if(!eligible(o)||o.stage==='waiting')return [];
   const posted=new Set([...ledger(o).flatMap(r=>r.refundIds||[]),...(o.refunds||[]).filter(r=>r.allocationStarted).map(r=>r.id)]),seen=new Set();
@@ -99,6 +99,7 @@ const FinanceModel = (() => {
  const allocationStatuses=['待分摊','分摊中','完成分摊','分摊异常'];
  Object.assign(orders[0],{stage:'waiting'});
  Object.assign(orders[1],{stage:'matched'});
+ Object.assign(orders[7],{stage:'waiting'}); // Gift example awaiting net income match.
  Object.assign(orders[2],{stage:'queued'});
  // Pending examples: income only (2), full refund (3), partial refund (5).
  Object.assign(orders[3],{stage:'queued',refundKind:'full'});
@@ -110,7 +111,7 @@ const FinanceModel = (() => {
  Object.assign(orders[10],{failure:{date:'2026-09-19',step:'生成退款分摊分录',reason:'退款分摊任务临时失败，平台应收账款待冲回',attempts:1,persistent:false}});
  Object.assign(orders[11],{failure:{date:'2026-09-19',step:'写入分摊记录',reason:'计提项映射缺失',attempts:3,persistent:true}});
  // Recent first-page examples for exercising the five-day reset window.
- for(const id of [4,6,7,8,9])orders[id].paid+=40*DAY;
+ for(const id of [1,4,6,7,8,9])orders[id].paid+=40*DAY;
  orders[6].days=3;
  orders[8].days=3;
  orders[9].failure.date='2026-10-30';
@@ -197,6 +198,7 @@ const FinanceModel = (() => {
   o.resetLedger=rows;
  }
  function addManualRecord(o,{date,account,direction,cents},zone=PACIFIC){
+  if(['免费试用','赠送'].includes(o.discountType))throw Error('该折扣类型不生成分摊明细');
   if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||new Date(date+'T00:00:00Z').toISOString().slice(0,10)!==date)throw Error('请选择有效统计日期');
   if(!['平台应收账款','合同负债','主营业务收入','财务费用'].includes(account))throw Error('请选择计提项');
   if(!['借记','贷记'].includes(direction))throw Error('请选择资金方向');
@@ -224,6 +226,7 @@ const FinanceModel = (() => {
   o.deletedLedger=[...(o.deletedLedger||[]),{...record}];o.resetLedger=rows;o.editedAllocationStatus=status;
  }
  function ledger(o){
+  if(['免费试用','赠送'].includes(o.discountType))return [];
   if(o.resetLedger)return o.resetLedger.filter(r=>!r.deleted);
   if(!eligible(o)||['waiting','matched','queued'].includes(o.stage))return [];
   let rows=buildLedger(o);
