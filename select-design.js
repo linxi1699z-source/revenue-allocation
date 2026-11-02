@@ -17,7 +17,7 @@
   function choose(i){const item=items[i];if(!item||item.disabled)return;const el=source;el.value=item.value;close();el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));if(el.isConnected)el.focus();}
   function open(el){
     close();source=el;source.setAttribute('aria-expanded','true');source.setAttribute('aria-controls','design-select-popup');source.setAttribute('aria-haspopup','listbox');
-    popup=document.createElement('div');popup.id='design-select-popup';popup.className='select-design-popup';popup.role='listbox';popup.setAttribute('aria-label',el.getAttribute('aria-label')||'选择选项');document.body.append(popup);
+    popup=document.createElement('div');popup.id='design-select-popup';popup.className='select-design-popup';popup.role='listbox';popup.setAttribute('aria-label',el.getAttribute('aria-label')||'选择选项');(el.closest('[popover],dialog')||document.body).append(popup);
     popup.onmousedown=e=>{e.preventDefault();const option=e.target.closest('[data-index]');if(option)choose(Number(option.dataset.index));};draw();
   }
   function enhance(){
@@ -51,6 +51,7 @@
     }
   },true);
   document.addEventListener('focusout',e=>{if(e.target===source)close();});
+  document.addEventListener('toggle',e=>{if(e.newState==='closed'&&source&&e.target.contains(source))close();},true);
   window.addEventListener('resize',()=>popup&&position());
   document.addEventListener('scroll',e=>{if(popup&&!popup.contains(e.target))position();},true);
   let pending=false;new MutationObserver(records=>{if(records.every(r=>r.target===popup||popup?.contains(r.target)))return;if(!pending){pending=true;queueMicrotask(()=>{pending=false;enhance();if(popup&&!source.isConnected)close();});}}).observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:['disabled','selected','checked']});
