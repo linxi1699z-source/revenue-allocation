@@ -206,6 +206,17 @@ const FinanceModel = (() => {
   o.resetLedger=[...rows,record].sort((a,b)=>a.timestamp-b.timestamp);o.editedAllocationStatus=status;
   return record;
  }
+ function addManualRecords(o,{startDate,endDate,account,direction,cents},zone=PACIFIC){
+  const valid=date=>/^\d{4}-\d{2}-\d{2}$/.test(date)&&!Number.isNaN(Date.parse(date+'T00:00:00Z'))&&new Date(date+'T00:00:00Z').toISOString().slice(0,10)===date;
+  if(!valid(startDate))throw Error('请选择统计开始时间');
+  if(!valid(endDate))throw Error('请选择有效统计结束时间');
+  if(endDate<startDate)throw Error('统计结束时间不能早于统计开始时间');
+  if(!['平台应收账款','合同负债','主营业务收入','财务费用'].includes(account))throw Error('请选择计提项');
+  if(!['借记','贷记'].includes(direction))throw Error('请选择资金方向');
+  if(!Number.isSafeInteger(cents)||cents<0)throw Error('请输入非负金额，最多保留 3 位小数');
+  const dates=[];for(let day=Date.parse(startDate+'T00:00:00Z'),last=Date.parse(endDate+'T00:00:00Z');day<=last;day+=DAY)dates.push(new Date(day).toISOString().slice(0,10));
+  return dates.map(date=>addManualRecord(o,{date,account,direction,cents},zone));
+ }
  function deleteManualRecord(o,id){
   const rows=ledger(o).map(r=>({...r})),record=rows.find(r=>r.id===id&&r.manual);
   if(!record)throw Error('仅人工添加记录允许删除');
@@ -256,6 +267,6 @@ const FinanceModel = (() => {
  function latestAllocationTimestamp(o){const rows=ledger(o);return rows.length?rows[rows.length-1].timestamp:null;}
  function latestAllocationTime(o,zone=PACIFIC){return formatTime(latestAllocationTimestamp(o),zone);}
 
- return {orders,countries,addManualRecord,deleteManualRecord,editLedger,resetEligibility,resetAllocation,updateAmounts,incomeBasis,ledger,monthly,balances,netIncome,netRefund,asOf,eligible,allocationStatuses,allocationStatus,anomalyRemark,entitlementExpiry,reconciliation,retry,firstAllocationTimestamp,latestAllocationTime,latestAllocationTimestamp,formatTime,dateInZone,dayEndTimestamp,pendingIncome,pendingRefunds,pendingRefundEntries};
+ return {orders,countries,addManualRecord,addManualRecords,deleteManualRecord,editLedger,resetEligibility,resetAllocation,updateAmounts,incomeBasis,ledger,monthly,balances,netIncome,netRefund,asOf,eligible,allocationStatuses,allocationStatus,anomalyRemark,entitlementExpiry,reconciliation,retry,firstAllocationTimestamp,latestAllocationTime,latestAllocationTimestamp,formatTime,dateInZone,dayEndTimestamp,pendingIncome,pendingRefunds,pendingRefundEntries};
 })();
 if(typeof module!=='undefined')module.exports=FinanceModel;
