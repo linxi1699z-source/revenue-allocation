@@ -228,18 +228,22 @@ const FinanceModel = (() => {
   if(!Number.isSafeInteger(debit)||!Number.isSafeInteger(credit)||debit!==credit)throw Error('借记和贷记金额必须相等。');
   const dates=[];for(let day=Date.parse(startDate+'T00:00:00Z'),last=Date.parse(endDate+'T00:00:00Z');day<=last;day+=DAY)dates.push(new Date(day).toISOString().slice(0,10));
   const rows=ledger(o).map(r=>({...r})),status=allocationStatus(o),created=[];let sequence=o.manualSequence||0;
+  const batchSequence=(o.manualBatchSequence||0)+1,batchId=`${o.id}-manual-batch-${now}-${batchSequence}`;
   for(const date of dates)for(const entry of entries){
    const timestamp=dayEndTimestamp(date,PACIFIC);
-   created.push({id:`${o.id}-manual-${now}-${++sequence}`,date,timestamp,account:entry.account,direction:entry.direction,cents:entry.cents,manual:true,deleted:false});
+   created.push({id:`${o.id}-manual-${now}-${++sequence}`,batchId,date,timestamp,account:entry.account,direction:entry.direction,cents:entry.cents,manual:true,deleted:false});
   }
-  o.resetLedger=[...rows,...created].sort((a,b)=>a.timestamp-b.timestamp);o.manualSequence=sequence;o.editedAllocationStatus=status;
+  o.resetLedger=[...rows,...created].sort((a,b)=>a.timestamp-b.timestamp);o.manualSequence=sequence;o.manualBatchSequence=batchSequence;o.editedAllocationStatus=status;
   return created;
  }
  function deleteManualRecord(o,id){
   const rows=ledger(o).map(r=>({...r})),record=rows.find(r=>r.id===id&&r.manual);
   if(!record)throw Error('仅人工添加记录允许删除');
-  const status=allocationStatus(o);record.deleted=true;record.deletedAt=Date.now();
-  o.deletedLedger=[...(o.deletedLedger||[]),{...record}];o.resetLedger=rows;o.editedAllocationStatus=status;
+  const status=allocationStatus(o),batchId=record.batchId??record.id,deletedAt=Date.now();
+  const batch=rows.filter(r=>r.manual&&(r.batchId??r.id)===batchId);
+  for(const row of batch){row.deleted=true;row.deletedAt=deletedAt;}
+  o.deletedLedger=[...(o.deletedLedger||[]),...batch.map(r=>({...r}))];o.resetLedger=rows;o.editedAllocationStatus=status;
+  return batch.length;
  }
  function ledger(o){
   if(['免费试用','赠送'].includes(o.discountType))return [];

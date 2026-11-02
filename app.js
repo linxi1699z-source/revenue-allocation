@@ -154,7 +154,7 @@ for(const form of document.querySelectorAll('[data-filter-form]')){
 
 let editingLedger=null;
 $('#ledger-body').onclick=e=>{
- const remove=e.target.closest('[data-ledger-delete]');if(remove){manualDeleteId=remove.dataset.ledgerDelete;$('#manual-delete-dialog').showModal();return;}
+ const remove=e.target.closest('[data-ledger-delete]');if(remove){manualDeleteId=remove.dataset.ledgerDelete;const rows=FinanceModel.ledger(state.order),record=rows.find(r=>r.id===manualDeleteId&&r.manual);if(!record)return;const count=rows.filter(r=>r.manual&&(r.batchId??r.id)===(record.batchId??record.id)).length;$('#manual-delete-title').textContent=count>1?`确认删除同批次的 ${count} 条记录吗？`:'确认删除对应记录吗？';$('#manual-delete-dialog').showModal();return;}
  const button=e.target.closest('[data-ledger-edit]');if(!button)return;
  const record=state.visibleLedger[Number(button.dataset.ledgerEdit)];if(!record)return;
  editingLedger={order:state.order,selection:{tab:record.manual?'daily':state.tab,index:record.manual?FinanceModel.ledger(state.order).findIndex(r=>r.id===record.id):record.index,date:record.date,account:record.account}};
