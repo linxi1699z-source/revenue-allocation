@@ -34,7 +34,7 @@ function setDefaultPaymentDates(){
  syncRangeLabels();
 }
 $('#search-form').onreset=()=>{setTimeout(()=>{$('#search-error').textContent='';state.filtered=[...FinanceModel.orders];state.page=1;document.querySelectorAll('.multi-select').forEach(b=>b.classList.remove('open'));document.querySelectorAll('.multi-select input').forEach(i=>i.dispatchEvent(new Event('change',{bubbles:true})));setDefaultPaymentDates();$('#search-form').requestSubmit();});};
-function renderDetail(){const o=state.order;if(!o)return;const b=FinanceModel.allocationStatus(o)==='待分摊'?{receivable:0,liability:0,revenue:0}:FinanceModel.balances(o);const noAllocationActions=['免费试用','赠送'].includes(o.discountType);$('#ledger-add').hidden=noAllocationActions||FinanceModel.allocationStatus(o)!=='分摊异常';$('#ledger-complete').hidden=noAllocationActions;$('#ledger-complete').disabled=FinanceModel.allocationStatus(o)==='完成分摊';$('#detail-summary').innerHTML=`<h2>${o.order} ${allocationBadge(o)} ${badge(o)}</h2><div class="summary-grid">${[['平台订单ID',o.platform],['产品ID',o.product],['支付服务商',o.provider],['币种',o.currency],['支付时间',time(o.paid)],['净收入',money(FinanceModel.netIncome(o))],['平台应收账款',money(b.receivable)],['合同负债',money(b.liability)],['已确认收入',money(b.revenue)]].map(([t,v])=>`<div class="summary-item"><span>${t}${['平台应收账款','合同负债','已确认收入'].includes(t)?' <button type="button" class="info-icon" data-tooltip="每日执行分摊程序后更新。" aria-label="每日执行分摊程序后更新。">ⓘ</button>':''}</span><strong>${v}</strong></div>`).join('')}</div>`;let rows=FinanceModel.ledger(o).map((r,index)=>({...r,index}));if(state.tab==='monthly')rows=FinanceModel.monthly(rows);rows.sort((a,b)=>b.timestamp-a.timestamp);const filters=state.ledgerFilters[state.tab];rows=rows.filter(r=>{const local=FinanceModel.formatTime(r.timestamp,state.timezone).slice(0,10);return (!filters.start||local>=filters.start)&&(!filters.end||local<=filters.end)&&(!filters.account||r.account===filters.account)&&(!filters.direction||r.direction===filters.direction);});document.querySelectorAll('[data-ledger-filter]').forEach(button=>{const key=button.dataset.ledgerFilter;button.classList.toggle('filter-active',key==='date'?!!(filters.start||filters.end):!!filters[key]);});document.querySelectorAll('[data-tab]').forEach(t=>{t.classList.toggle('selected',t.dataset.tab===state.tab);t.setAttribute('aria-selected',String(t.dataset.tab===state.tab));});state.visibleLedger=rows;paginate('detail-pagination',rows.length,true);$('#ledger-body').innerHTML=rows.slice((state.detailPage-1)*state.detailSize,state.detailPage*state.detailSize).map((r,i)=>`<tr><td>${time(r.timestamp)}</td><td><span class="account-name">${r.account}</span>${state.tab==='daily'&&r.manual?' <span class="manual-tag">人工添加</span>':''}${r.event==='refund'?' <span class="refund-note">全额退款</span>':''}</td><td><span class="direction ${r.direction==='贷记'?'credit':''}">${r.direction}</span></td><td>${o.currency}</td><td class="money">${money(r.cents)}</td><td><button type="button" class="ledger-edit" data-ledger-edit="${(state.detailPage-1)*state.detailSize+i}">编辑</button> <button type="button" class="ledger-edit" ${r.manual?`data-ledger-delete="${r.id}"`:'disabled'}>删除</button></td></tr>`).join('')||'<tr><td colspan="6" class="empty-cell">尚未生成分摊记录</td></tr>';}
+function renderDetail(){const o=state.order;if(!o)return;const b=FinanceModel.allocationStatus(o)==='待分摊'?{receivable:0,liability:0,revenue:0}:FinanceModel.balances(o);const noAllocationActions=['免费试用','赠送'].includes(o.discountType);$('#ledger-add').hidden=!FinanceModel.canAddManualRecords(o);$('#ledger-complete').hidden=noAllocationActions;$('#ledger-complete').disabled=FinanceModel.allocationStatus(o)==='完成分摊';$('#detail-summary').innerHTML=`<h2>${o.order} ${allocationBadge(o)} ${badge(o)}</h2><div class="summary-grid">${[['平台订单ID',o.platform],['产品ID',o.product],['支付服务商',o.provider],['币种',o.currency],['支付时间',time(o.paid)],['净收入',money(FinanceModel.netIncome(o))],['平台应收账款',money(b.receivable)],['合同负债',money(b.liability)],['已确认收入',money(b.revenue)]].map(([t,v])=>`<div class="summary-item"><span>${t}${['平台应收账款','合同负债','已确认收入'].includes(t)?' <button type="button" class="info-icon" data-tooltip="每日执行分摊程序后更新。" aria-label="每日执行分摊程序后更新。">ⓘ</button>':''}</span><strong>${v}</strong></div>`).join('')}</div>`;let rows=FinanceModel.ledger(o).map((r,index)=>({...r,index}));if(state.tab==='monthly')rows=FinanceModel.monthly(rows);rows.sort((a,b)=>b.timestamp-a.timestamp);const filters=state.ledgerFilters[state.tab];rows=rows.filter(r=>{const local=FinanceModel.formatTime(r.timestamp,state.timezone).slice(0,10);return (!filters.start||local>=filters.start)&&(!filters.end||local<=filters.end)&&(!filters.account||r.account===filters.account)&&(!filters.direction||r.direction===filters.direction);});document.querySelectorAll('[data-ledger-filter]').forEach(button=>{const key=button.dataset.ledgerFilter;button.classList.toggle('filter-active',key==='date'?!!(filters.start||filters.end):!!filters[key]);});document.querySelectorAll('[data-tab]').forEach(t=>{t.classList.toggle('selected',t.dataset.tab===state.tab);t.setAttribute('aria-selected',String(t.dataset.tab===state.tab));});state.visibleLedger=rows;paginate('detail-pagination',rows.length,true);$('#ledger-body').innerHTML=rows.slice((state.detailPage-1)*state.detailSize,state.detailPage*state.detailSize).map((r,i)=>`<tr><td>${time(r.timestamp)}</td><td><span class="account-name">${r.account}</span>${state.tab==='daily'&&r.manual?' <span class="manual-tag">人工添加</span>':''}${r.event==='refund'?' <span class="refund-note">全额退款</span>':''}</td><td><span class="direction ${r.direction==='贷记'?'credit':''}">${r.direction}</span></td><td>${o.currency}</td><td class="money">${money(r.cents)}</td><td><button type="button" class="ledger-edit" data-ledger-edit="${(state.detailPage-1)*state.detailSize+i}" ${r.superseded||r.event==="edit-reversal"?"disabled":""}>编辑</button></td></tr>`).join('')||'<tr><td colspan="6" class="empty-cell">尚未生成分摊记录</td></tr>';}
 document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{state.tab=b.dataset.tab;state.detailPage=1;renderDetail();});$('#back').onclick=()=>location.hash='income';
 function renderPending(){
  const o=state.pendingOrder;if(!o)return;
@@ -79,7 +79,7 @@ function exportZip(files){
 }
 function incomeExportFiles(orders,start,end,zone){
  const amount=n=>n===null?'待匹配':String(Number((n/1000).toFixed(3))),stamp=n=>FinanceModel.formatTime(n,zone).slice(0,16),date=n=>n===null?'—':FinanceModel.formatTime(n,zone).slice(0,16);
- const orderRows=[headers.slice(0,-1)],daily=[['支付订单ID','平台订单ID','统计时间','计提项','资金方向','币种','金额']],monthly=[['支付订单ID','平台订单ID','统计时间','计提项','资金方向','币种','金额']];
+ const orderRows=[headers.slice(0,-1)],daily=[['支付订单ID','平台订单ID','统计时间','会计科目','借贷方向','币种','金额']],monthly=[['支付订单ID','平台订单ID','统计时间','会计科目','借贷方向','币种','金额']];
  for(const o of orders){
   const rows=FinanceModel.ledger(o).filter(r=>r.date>=start&&r.date<=end);if(!rows.length)continue;
   const b=FinanceModel.balances(o);
@@ -154,19 +154,27 @@ for(const form of document.querySelectorAll('[data-filter-form]')){
 
 let editingLedger=null;
 $('#ledger-body').onclick=e=>{
- const remove=e.target.closest('[data-ledger-delete]');if(remove){manualDeleteId=remove.dataset.ledgerDelete;const rows=FinanceModel.ledger(state.order),record=rows.find(r=>r.id===manualDeleteId&&r.manual);if(!record)return;const count=rows.filter(r=>r.manual&&(r.batchId??r.id)===(record.batchId??record.id)).length;$('#manual-delete-title').textContent=count>1?`确认删除同批次的 ${count} 条记录吗？`:'确认删除对应记录吗？';$('#manual-delete-dialog').showModal();return;}
  const button=e.target.closest('[data-ledger-edit]');if(!button)return;
  const record=state.visibleLedger[Number(button.dataset.ledgerEdit)];if(!record)return;
- editingLedger={order:state.order,selection:{tab:record.manual?'daily':state.tab,index:record.manual?FinanceModel.ledger(state.order).findIndex(r=>r.id===record.id):record.index,date:record.date,account:record.account}};
- $('#ledger-edit-meta').innerHTML=[['统计日期',time(record.timestamp)],['计提项',record.account],['币种',state.order.currency]].map(([label,value])=>`<div class="summary-item"><span>${label}</span><strong>${value}</strong></div>`).join('');
- const form=$('#ledger-edit-form');form.elements.direction.value=record.direction;form.elements.amount.value=Number((record.cents/1000).toFixed(3));$('#ledger-edit-error').textContent='';$('#ledger-edit-dialog').showModal();
+ const daily=FinanceModel.ledger(state.order).map((r,index)=>({...r,index}));
+ const all=state.tab==='monthly'?FinanceModel.monthly(daily):daily;
+ const group=all.filter(r=>r.timestamp===record.timestamp);
+ editingLedger={order:state.order,rows:group.map(r=>({selection:{tab:state.tab,index:r.index,date:r.date,account:r.account,timestamp:r.timestamp},readonly:!!(r.superseded||r.event==='edit-reversal')}))};
+ $('#ledger-edit-meta').innerHTML=[['统计时间',time(record.timestamp)],['币种',state.order.currency]].map(([label,value])=>`<div class="summary-item"><span>${label}</span><strong>${value}</strong></div>`).join('');
+ $('#ledger-edit-rows').innerHTML=group.map((r,index)=>{const readonly=editingLedger.rows[index].readonly;return `<div class="ledger-edit-row${readonly?' readonly':''}" data-edit-row="${index}"><span>${r.account}${readonly?' <small>已冲回</small>':''}</span><select name="direction" aria-label="第 ${index+1} 条借贷方向" ${readonly?'disabled':''}><option ${r.direction==='借记'?'selected':''}>借记</option><option ${r.direction==='贷记'?'selected':''}>贷记</option></select><input name="amount" aria-label="第 ${index+1} 条金额" inputmode="decimal" value="${Number((r.cents/1000).toFixed(3))}" ${readonly?'disabled':''}></div>`;}).join('');
+ $('#ledger-edit-error').textContent='';$('#ledger-edit-dialog').showModal();
 };
 for(const id of ['ledger-edit-close','ledger-edit-cancel'])$('#'+id).onclick=()=>$('#ledger-edit-dialog').close();
 $('#ledger-edit-dialog').addEventListener('close',()=>{editingLedger=null;});
 $('#ledger-edit-form').onsubmit=e=>{
- e.preventDefault();if(!editingLedger)return;const form=e.target,raw=form.elements.amount.value.trim();
- if(!/^\d+(?:\.\d{1,3})?$/.test(raw)){$('#ledger-edit-error').textContent='请输入非负金额，最多保留 3 位小数';return;}
- try{FinanceModel.editLedger(editingLedger.order,editingLedger.selection,form.elements.direction.value,Math.round(Number(raw)*1000));}catch(error){$('#ledger-edit-error').textContent=error.message;return;}
+ e.preventDefault();if(!editingLedger)return;const edits=[];
+ for(const [index,record] of editingLedger.rows.entries()){
+  if(record.readonly)continue;
+  const row=$(`#ledger-edit-rows [data-edit-row="${index}"]`),raw=row.querySelector('[name=amount]').value.trim();
+  if(!/^\d+(?:\.\d{1,3})?$/.test(raw)){$('#ledger-edit-error').textContent='请输入非负金额，最多保留 3 位小数';return;}
+  edits.push({selection:record.selection,direction:row.querySelector('[name=direction]').value,cents:Math.round(Number(raw)*1000)});
+ }
+ try{FinanceModel.editLedgerGroup(editingLedger.order,edits);}catch(error){$('#ledger-edit-error').textContent=error.message;return;}
  $('#ledger-edit-dialog').close();renderDetail();$('#search-form').requestSubmit();
 };
 
@@ -204,18 +212,17 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&rangeDraft){closeRa
 document.addEventListener('toggle',e=>{if(e.newState==='closed'&&rangeDraft&&e.target.contains(rangeDraft.box))closeRangeCalendar();},true);
 syncRangeLabels();
 
-let manualDeleteId=null;
 const PACIFIC_ZONE='America/Los_Angeles';
 const manualEntries=$('#manual-entries');
 function updateManualEntryControls(){
  const rows=[...manualEntries.querySelectorAll('.manual-entry')];
  rows.forEach((row,index)=>{
-  row.querySelector('.manual-entry-title').textContent=`计提项 ${index+1}`;
+  row.querySelector('.manual-entry-title').textContent=`会计科目 ${index+1}`;
   row.querySelector('[data-remove-manual]').disabled=rows.length<2;
  });
 }
 function addManualEntry(){
- manualEntries.insertAdjacentHTML('beforeend',`<div class="manual-entry"><div class="manual-entry-header"><strong class="manual-entry-title"></strong><button type="button" data-remove-manual aria-label="删除此计提项">删除</button></div><label><span><b class="required" aria-hidden="true">*</b> 计提项</span><select name="account"><option value="">请选择计提项</option><option>平台应收账款</option><option>合同负债</option><option>主营业务收入</option><option>财务费用</option></select></label><label><span><b class="required" aria-hidden="true">*</b> 资金方向</span><select name="direction"><option value="">请选择资金方向</option><option>借记</option><option>贷记</option></select></label><label><span><b class="required" aria-hidden="true">*</b> 金额/天</span><div class="manual-amount"><input name="amount" inputmode="decimal" aria-label="金额/天" placeholder="请输入金额"><span>${state.order.currency}</span></div></label></div>`);
+ manualEntries.insertAdjacentHTML('beforeend',`<div class="manual-entry"><div class="manual-entry-header"><strong class="manual-entry-title"></strong><button type="button" data-remove-manual aria-label="删除此会计科目">删除</button></div><label><span><b class="required" aria-hidden="true">*</b> 会计科目</span><select name="account"><option value="">请选择会计科目</option><option>平台应收账款</option><option>合同负债</option><option>主营业务收入</option><option>财务费用</option></select></label><label><span><b class="required" aria-hidden="true">*</b> 借贷方向</span><select name="direction"><option value="">请选择借贷方向</option><option>借记</option><option>贷记</option></select></label><label><span><b class="required" aria-hidden="true">*</b> 金额/天</span><div class="manual-amount"><input name="amount" inputmode="decimal" aria-label="金额/天" placeholder="请输入金额"><span>${state.order.currency}</span></div></label></div>`);
  updateManualEntryControls();
 }
 $('#manual-add-entry').onclick=addManualEntry;
@@ -242,8 +249,8 @@ $('#ledger-add-form').onsubmit=e=>{
  if(!f.elements.startDate.value){$('#ledger-add-error').textContent='请选择统计开始时间';return;}
  for(const row of manualEntries.querySelectorAll('.manual-entry')){
   const account=row.querySelector('[name=account]').value,direction=row.querySelector('[name=direction]').value,raw=row.querySelector('[name=amount]').value.trim();
-  if(!account){$('#ledger-add-error').textContent='请选择计提项';return;}
-  if(!direction){$('#ledger-add-error').textContent='请选择资金方向';return;}
+  if(!account){$('#ledger-add-error').textContent='请选择会计科目';return;}
+  if(!direction){$('#ledger-add-error').textContent='请选择借贷方向';return;}
   if(!raw){$('#ledger-add-error').textContent='请输入金额';return;}
   if(!/^\d+(?:\.\d{1,3})?$/.test(raw)){$('#ledger-add-error').textContent='请输入非负金额，最多保留 3 位小数';return;}
   entries.push({account,direction,cents:Math.round(Number(raw)*1000)});
@@ -251,9 +258,6 @@ $('#ledger-add-form').onsubmit=e=>{
  try{FinanceModel.addManualRecords(state.order,{startDate:f.elements.startDate.value,endDate:f.elements.endDate.value,entries});}catch(error){$('#ledger-add-error').textContent=error.message;return;}
  $('#ledger-add-dialog').close();renderDetail();renderList();
 };
-$('#manual-delete-cancel').onclick=()=>$('#manual-delete-dialog').close();
-$('#manual-delete-confirm').onclick=()=>{FinanceModel.deleteManualRecord(state.order,manualDeleteId);$('#manual-delete-dialog').close();renderDetail();$('#search-form').requestSubmit();};
-
 $('#ledger-complete').onclick=()=>{$('#ledger-complete-error').textContent='';$('#ledger-complete-dialog').showModal();};
 $('#ledger-complete-cancel').onclick=()=>$('#ledger-complete-dialog').close();
 $('#ledger-complete-confirm').onclick=()=>{

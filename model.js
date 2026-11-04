@@ -113,7 +113,7 @@ const FinanceModel = (() => {
  Object.assign(orders[8],{days:7,amountMismatch:true});
  Object.assign(orders[9],{failure:{date:'2026-09-20',step:'生成分摊分录',reason:'分摊服务临时不可用',attempts:1,persistent:false}});
  Object.assign(orders[10],{failure:{date:'2026-09-19',step:'生成退款分摊分录',reason:'退款分摊任务临时失败，平台应收账款待冲回',attempts:1,persistent:false}});
- Object.assign(orders[11],{failure:{date:'2026-09-19',step:'写入分摊记录',reason:'计提项映射缺失',attempts:3,persistent:true}});
+ Object.assign(orders[11],{failure:{date:'2026-09-19',step:'写入分摊记录',reason:'会计科目映射缺失',attempts:3,persistent:true}});
  // Recent first-page examples for exercising the five-day reset window.
  for(const id of [1,4,6,7,8,9])orders[id].paid+=40*DAY;
  orders[6].days=3;
@@ -177,60 +177,81 @@ const FinanceModel = (() => {
   Object.assign(o,next);
   return {deletedCount:previous.length,generatedCount:rebuilt.length};
  }
- function editLedger(o,selection,direction,amount){
-  if(!['借记','贷记'].includes(direction))throw Error('请选择资金方向');
-  if(!Number.isSafeInteger(amount)||amount<0)throw Error('金额须为非负数，最多保留 3 位小数');
-  const rows=ledger(o).map(r=>({...r})),preservedStatus=allocationStatus(o),now=Date.now(),revision=(o.ledgerEditRevision??0)+1;let index=selection.index;
-  let monthlyPrevious=null;
-  if(selection.tab==='monthly'){
-   monthlyPrevious=monthly(rows).find(r=>r.date===selection.date&&r.account===selection.account);
-   const indices=rows.map((r,i)=>r.date.slice(0,7)===selection.date&&r.account===selection.account?i:-1).filter(i=>i>=0);
-   if(!indices.length)throw Error('记录已变更，请重新打开编辑弹窗');
-   index=indices[indices.length-1];
-   const net=indices.reduce((sum,i)=>sum+(rows[i].direction==='借记'?rows[i].cents:-rows[i].cents),0);
-   const old=rows[index],target=(direction==='借记'?amount:-amount)-net+(old.direction==='借记'?old.cents:-old.cents);
-   direction=target<0?'贷记':target>0?'借记':direction;amount=Math.abs(target);
+ function editLedgerGroup(o,edits){
+  if(!Array.isArray(edits)||!edits.length)return [];
+  const rows=ledger(o).map(r=>({...r})),monthlyRows=monthly(rows),preservedStatus=allocationStatus(o),now=Date.now();
+  const selected=new Set(),changes=[];
+  for(const {selection,direction,cents} of edits){
+   if(!['借记','贷记'].includes(direction))throw Error('请选择借贷方向');
+   if(!Number.isSafeInteger(cents)||cents<0)throw Error('金额须为非负数，最多保留 3 位小数');
+   const monthlySelection=selection?.tab==='monthly';
+   const previous=monthlySelection
+    ?monthlyRows.find(r=>r.date===selection.date&&r.account===selection.account)
+    :rows[selection?.index];
+   if(!previous||previous.account!==selection.account||previous.date!==selection.date||selection.timestamp!==undefined&&previous.timestamp!==selection.timestamp)throw Error('记录已变更，请重新打开编辑弹窗');
+   if(!monthlySelection&&(previous.superseded||previous.event==='edit-reversal'))throw Error('请编辑最新的分摊记录');
+   const key=monthlySelection?`monthly|${selection.date}|${selection.account}`:`daily|${selection.index}`;
+   if(selected.has(key))throw Error('同一条记录不能重复编辑');
+   selected.add(key);
+   if(previous.direction!==direction||previous.cents!==cents)changes.push({selection,previous:{...previous},direction,cents,monthlySelection});
   }
-  if(!rows[index])throw Error('记录已变更，请重新打开编辑弹窗');
-  const previous={...rows[index],id:rows[index].id??`${o.id}-original-${index}`};
-  rows[index]={...previous,id:`${o.id}-edit-${revision}`,direction,cents:amount,deleted:false,replacesId:previous.id};
-  o.deletedLedger=[...(o.deletedLedger||[]),{...previous,deleted:true,deletedAt:now}];
-  if(monthlyPrevious){
-   const updated=monthly(rows).find(r=>r.date===selection.date&&r.account===selection.account)??{...monthlyPrevious,direction,cents:0};
-   o.monthlyEditHistory=[...(o.monthlyEditHistory||[]),{previous:{...monthlyPrevious,deleted:true,deletedAt:now},replacement:{...updated,deleted:false,timestamp:monthlyPrevious.timestamp}}];
+  if(!changes.length)return [];
+  const revision=(o.ledgerEditRevision??0)+1,created=[],history=[];
+  for(const [index,change] of changes.entries()){
+   const {selection,previous,direction,cents,monthlySelection}=change;
+   const sourceId=previous.id??`${o.id}-${monthlySelection?'monthly-'+selection.date:'original-'+selection.index}`;
+   const date=monthlySelection?dateInZone(previous.timestamp,PACIFIC):previous.date;
+   const base={date,timestamp:previous.timestamp,account:previous.account,deleted:false,sourceId,editedAt:now};
+   if(previous.batchId)base.batchId=previous.batchId;
+   const reversal={...base,id:`${o.id}-edit-${revision}-${index}-reversal`,direction:previous.direction==='借记'?'贷记':'借记',cents:previous.cents,event:'edit-reversal'};
+   const replacement={...base,id:`${o.id}-edit-${revision}-${index}-replacement`,direction,cents,event:'edit-replacement'};
+   if(!monthlySelection)rows[selection.index].superseded=true;
+   created.push(reversal,replacement);
+   history.push({timestamp:now,previous,reversal:{...reversal},replacement:{...replacement}});
   }
-  o.ledgerEdits=[...(o.ledgerEdits||[]),{timestamp:now,previous:{...previous,deleted:true},updated:{...rows[index]}}];
+  o.ledgerEdits=[...(o.ledgerEdits||[]),...history];
   o.ledgerEditRevision=revision;o.editedAllocationStatus=preservedStatus;
-  o.resetLedger=rows;
+  o.resetLedger=[...rows,...created].sort((a,b)=>a.timestamp-b.timestamp);
+  return history;
  }
+ function editLedger(o,selection,direction,amount){return editLedgerGroup(o,[{selection,direction,cents:amount}])[0]??null;}
  function addManualRecords(o,{startDate,endDate,entries},now=Date.now()){
   const valid=date=>/^\d{4}-\d{2}-\d{2}$/.test(date)&&!Number.isNaN(Date.parse(date+'T00:00:00Z'))&&new Date(date+'T00:00:00Z').toISOString().slice(0,10)===date;
   if(['免费试用','赠送'].includes(o.discountType))throw Error('该折扣类型不生成分摊明细');
-  if(allocationStatus(o)!=='分摊异常')throw Error('仅分摊异常订单允许新增记录');
+  if(!canAddManualRecords(o))throw Error('仅分摊异常或存在异常备注的订单允许新增记录');
   if(!valid(startDate))throw Error('请选择统计开始时间');
   const hasEndDate=Boolean(endDate);
   endDate=endDate||startDate;
-  if(!valid(endDate))throw Error('请选择有效统计结束时间');
-  if(hasEndDate&&endDate<=startDate)throw Error('统计结束时间必须晚于统计开始时间');
+  const endDateError='结束时间必须大于等于开始时间且小于等于收入截止时间';
+  if(!valid(endDate))throw Error(endDateError);
+  if(hasEndDate&&endDate<=startDate)throw Error(endDateError);
   const paidEnd=dayEndTimestamp(startDate,PACIFIC);
   if(!eligible(o)||paidEnd<o.paid)throw Error('统计开始时间不能早于支付成功时间');
   const cutoff=incomeCutoffDate(now);
-  if(endDate>cutoff)throw Error(`统计结束时间不能晚于收入截止日期（${cutoff} 23:59:59 太平洋时间）`);
-  if(!Array.isArray(entries)||!entries.length)throw Error('请新增计提项');
+  if(endDate>cutoff)throw Error(endDateError);
+  if(!Array.isArray(entries)||!entries.length)throw Error('请新增会计科目');
   let debit=0,credit=0;
   for(const entry of entries){
-   if(!['平台应收账款','合同负债','主营业务收入','财务费用'].includes(entry.account))throw Error('请选择计提项');
-   if(!['借记','贷记'].includes(entry.direction))throw Error('请选择资金方向');
+   if(!['平台应收账款','合同负债','主营业务收入','财务费用'].includes(entry.account))throw Error('请选择会计科目');
+   if(!['借记','贷记'].includes(entry.direction))throw Error('请选择借贷方向');
    if(!Number.isSafeInteger(entry.cents)||entry.cents<0)throw Error('请输入非负金额，最多保留 3 位小数');
    if(entry.direction==='借记')debit+=entry.cents;else credit+=entry.cents;
   }
   if(!entries.some(entry=>entry.account==='平台应收账款'))throw Error('必须设置平台应收账款记录。');
+  // The same per-day amounts are applied to every selected Pacific date.
   if(!Number.isSafeInteger(debit)||!Number.isSafeInteger(credit)||debit!==credit)throw Error('借记和贷记金额必须相等。');
   const dates=[];for(let day=Date.parse(startDate+'T00:00:00Z'),last=Date.parse(endDate+'T00:00:00Z');day<=last;day+=DAY)dates.push(new Date(day).toISOString().slice(0,10));
   const rows=ledger(o).map(r=>({...r})),status=allocationStatus(o),created=[];let sequence=o.manualSequence||0;
+  const days=dates.map(date=>({date,timestamp:dayEndTimestamp(date,PACIFIC)}));
+  const key=(timestamp,account,direction)=>JSON.stringify([timestamp,account,direction]);
+  const occupied=new Set(rows.map(r=>key(r.timestamp,r.account,r.direction)));
+  for(const {timestamp} of days)for(const entry of entries){
+   const recordKey=key(timestamp,entry.account,entry.direction);
+   if(occupied.has(recordKey))throw Error(`统计时间 ${formatTime(timestamp,PACIFIC)} 的${entry.account}（${entry.direction}）已存在分摊记录，无法重复添加。`);
+   occupied.add(recordKey);
+  }
   const batchSequence=(o.manualBatchSequence||0)+1,batchId=`${o.id}-manual-batch-${now}-${batchSequence}`;
-  for(const date of dates)for(const entry of entries){
-   const timestamp=dayEndTimestamp(date,PACIFIC);
+  for(const {date,timestamp} of days)for(const entry of entries){
    created.push({id:`${o.id}-manual-${now}-${++sequence}`,batchId,date,timestamp,account:entry.account,direction:entry.direction,cents:entry.cents,manual:true,deleted:false});
   }
   o.resetLedger=[...rows,...created].sort((a,b)=>a.timestamp-b.timestamp);o.manualSequence=sequence;o.manualBatchSequence=batchSequence;o.editedAllocationStatus=status;
@@ -240,7 +261,7 @@ const FinanceModel = (() => {
   const rows=ledger(o).map(r=>({...r})),record=rows.find(r=>r.id===id&&r.manual);
   if(!record)throw Error('仅人工添加记录允许删除');
   const status=allocationStatus(o),batchId=record.batchId??record.id,deletedAt=Date.now();
-  const batch=rows.filter(r=>r.manual&&(r.batchId??r.id)===batchId);
+  const batch=rows.filter(r=>(r.batchId??r.id)===batchId);
   for(const row of batch){row.deleted=true;row.deletedAt=deletedAt;}
   o.deletedLedger=[...(o.deletedLedger||[]),...batch.map(r=>({...r}))];o.resetLedger=rows;o.editedAllocationStatus=status;
   return batch.length;
@@ -273,6 +294,7 @@ const FinanceModel = (() => {
   return '分摊中';
  }
  function anomalyRemark(o){if(o.failure)return o.failure.reason;return allocationStatus(o)==='完成分摊'&&reconciliation(o).difference!==0?'完成分摊（金额异常）':'';}
+ function canAddManualRecords(o){return !['免费试用','赠送'].includes(o.discountType)&&(allocationStatus(o)==='分摊异常'||Boolean(anomalyRemark(o)));}
  function retry(o){
   if(!o.failure)return false;
   o.failure.attempts++;
@@ -311,6 +333,6 @@ const FinanceModel = (() => {
  function latestAllocationTimestamp(o){const rows=ledger(o);return rows.length?rows[rows.length-1].timestamp:null;}
  function latestAllocationTime(o,zone=PACIFIC){return formatTime(latestAllocationTimestamp(o),zone);}
 
- return {orders,countries,completeAllocation,addManualRecords,deleteManualRecord,editLedger,resetEligibility,resetAllocation,updateAmounts,incomeBasis,ledger,monthly,balances,netIncome,netRefund,asOf,eligible,allocationStatuses,allocationStatus,anomalyRemark,entitlementExpiry,reconciliation,retry,firstAllocationTimestamp,latestAllocationTime,latestAllocationTimestamp,formatTime,dateInZone,dayEndTimestamp,incomeCutoffDate,pendingIncome,pendingRefunds,pendingRefundEntries};
+ return {orders,countries,completeAllocation,addManualRecords,canAddManualRecords,deleteManualRecord,editLedger,editLedgerGroup,resetEligibility,resetAllocation,updateAmounts,incomeBasis,ledger,monthly,balances,netIncome,netRefund,asOf,eligible,allocationStatuses,allocationStatus,anomalyRemark,entitlementExpiry,reconciliation,retry,firstAllocationTimestamp,latestAllocationTime,latestAllocationTimestamp,formatTime,dateInZone,dayEndTimestamp,incomeCutoffDate,pendingIncome,pendingRefunds,pendingRefundEntries};
 })();
 if(typeof module!=='undefined')module.exports=FinanceModel;
