@@ -58,7 +58,7 @@ def configure(pages, texts, meta, notes, move, formulas, scope):
     dates.nodes = {}; dates.edges = []
     texts['dates'].update({
         'restore_same': '退款时间与退款撤销时间\n属于太平洋时间的同一天？',
-        'restore_age': '收入分摊截止时间减退款撤销时间\n小于或等于十五天？\n时间统一使用太平洋时间',
+        'restore_age': '收入分摊截止时间减退款撤销时间\n大于15天？',
         'restore_time': '更新订单首次收入登记时间\n取退款撤销时间（太平洋时间）',
         'restore_cut': '更新订单首次收入登记时间\n取当前收入分摊截止时间',
         'restoreaction': '进入「退款撤销收入分摊」\n根据原退款实际记录生成反向凭证\n状态改为分摊中，不从普通首次分摊重新开始',
@@ -66,7 +66,7 @@ def configure(pages, texts, meta, notes, move, formulas, scope):
     for node_id, row, col, kind in [
         ('start', 0, 0, 'terminal'), ('restore', 1, 0, 'decision'),
         ('restore_same', 1, 1, 'decision'), ('restore_age', 2, 1, 'decision'),
-        ('restore_time', 3, 1, 'process'), ('restore_cut', 2, 2, 'process'),
+        ('restore_cut', 3, 1, 'process'), ('restore_time', 2, 2, 'process'),
         ('restoreaction', 4, 2, 'sub'), ('long', 4, 0, 'decision'),
         ('fpay', 4, 1, 'process'), ('fcut', 5, 0, 'process'),
         ('refund', 6, 0, 'decision'), ('norefund', 6, 1, 'process'),
@@ -85,14 +85,14 @@ def configure(pages, texts, meta, notes, move, formulas, scope):
     for a, b, label, side in [
         ('restore', 'long', '否', False), ('restore', 'restore_same', '是', True),
         ('restore_same', 'restore_age', '否', False), ('restore_same', 'long', '是', False),
-        ('restore_age', 'restore_time', '是', False), ('restore_age', 'restore_cut', '否', True),
+        ('restore_age', 'restore_cut', '是', False), ('restore_age', 'restore_time', '否', True),
         ('long', 'fcut', '是', False), ('long', 'fpay', '否', True),
         ('refund', 'late', '是', False), ('refund', 'norefund', '否', True),
         ('late', 'gcut', '是', False), ('late', 'gpay', '否', True),
         ('downgrade', 'newE', '是', False), ('downgrade', 'normalE', '否', True),
     ]:
         dates.e(a, b, label, side)
-    notes['dates'][1] = '特殊订单规则：谷歌被降级旧订单继续分摊，使用降级后新订单的权益过期时间。苹果退款撤销订单进入流程八；退款与撤销在太平洋时间同一天时，按普通无退款订单处理，沿用支付成功时间的登记规则。跨日退款撤销时，截止时间减撤销时间不超过十五天，首次收入登记时间取撤销时间，否则取本次截止时间。升级后新订单正常分摊，苹果被升级旧订单存在退款时间时按退款流程处理。'
+    notes['dates'][1] = '特殊订单规则：谷歌被降级旧订单继续分摊，使用降级后新订单的权益过期时间。苹果退款撤销订单进入流程八；退款与撤销在太平洋时间同一天时，按普通无退款订单处理，沿用支付成功时间的登记规则。跨日退款撤销时，收入分摊截止时间减退款撤销时间大于15天，订单首次收入登记时间取收入分摊截止时间；否则取退款撤销时间（含恰好15天）。升级后新订单正常分摊，苹果被升级旧订单存在退款时间时按退款流程处理。'
     notes['dates'][0] = '普通订单' + notes['dates'][0]
     meta['dates'] = ('二、登记时间与特殊订单', '使用太平洋时间确定登记时间；苹果跨日退款撤销进入流程八，同日退款撤销按普通无退款订单处理。', '原文第19至20页及本次退款撤销规则')
     formulas['dates'].update({
@@ -108,7 +108,7 @@ def configure(pages, texts, meta, notes, move, formulas, scope):
         'ordinary': '进入「无退款收入分摊」\n按普通无退款、非退款撤销订单处理\n不执行本页的退款反向凭证与重新预估逻辑',
         'due': '退款撤销时间\n小于或等于当前收入分摊截止时间？',
         'wait': '尚未到退款撤销处理时间\n本次不新增退款撤销相关分摊记录\n等待后续截止时间满足条件',
-        'age': '收入分摊截止时间减退款撤销时间\n小于或等于十五天？\n时间统一使用太平洋时间',
+        'age': '收入分摊截止时间减退款撤销时间\n大于15天？',
         'event_time': '更新订单首次收入登记时间\n取退款撤销时间（太平洋时间）',
         'cut_time': '更新订单首次收入登记时间\n取当前收入分摊截止时间',
         'status': '收入分摊状态改为「分摊中」',
@@ -139,7 +139,7 @@ def configure(pages, texts, meta, notes, move, formulas, scope):
         ('start', 0, 0, 'terminal'), ('record', 1, 0, 'process'),
         ('same_day', 2, 0, 'decision'), ('ordinary', 2, 1, 'sub'),
         ('due', 3, 0, 'decision'), ('wait', 3, 1, 'process'),
-        ('age', 4, 0, 'decision'), ('event_time', 5, 0, 'process'), ('cut_time', 4, 1, 'process'),
+        ('age', 4, 0, 'decision'), ('cut_time', 5, 0, 'process'), ('event_time', 4, 1, 'process'),
         ('status', 6, 0, 'process'), ('reverse', 7, 0, 'process'), ('estimate', 8, 0, 'process'),
         ('time_ready', 9, 0, 'decision'), ('first_wait', 9, 1, 'process'),
         ('first', 10, 0, 'decision'), ('select_day', 10, 1, 'process'),
@@ -162,7 +162,7 @@ def configure(pages, texts, meta, notes, move, formulas, scope):
     for a, b, label, side in [
         ('same_day', 'due', '否', False), ('same_day', 'ordinary', '是', True),
         ('due', 'age', '是', False), ('due', 'wait', '否', True),
-        ('age', 'event_time', '是', False), ('age', 'cut_time', '否', True),
+        ('age', 'cut_time', '是', False), ('age', 'event_time', '否', True),
         ('time_ready', 'first', '是', False), ('time_ready', 'first_wait', '否', True),
         ('first', 'first_amount', '是', False), ('first', 'select_day', '否', True),
         ('expired', 'tail', '是', False), ('expired', 'daily', '否', True),
@@ -173,7 +173,7 @@ def configure(pages, texts, meta, notes, move, formulas, scope):
         reversal.e(a, b, label, side)
     meta['reversal'] = ('八、退款撤销收入分摊', '苹果跨日退款撤销先按原退款实际科目与金额生成反向凭证，再重新预估收入并按日分摊；同日退款撤销按普通无退款流程处理。', '本次用户确认的退款撤销规则')
     notes['reversal'] = [
-        '时间选取：先将相关时间转换为太平洋时间。截止时间减退款撤销时间不超过十五天（含恰好十五天），订单首次收入登记时间取退款撤销时间，否则取当前收入分摊截止时间；这里取实际指定时间，不额外改为日末。撤销时间晚于本次截止时间时等待后续处理。',
+        '时间选取：先将相关时间转换为太平洋时间。收入分摊截止时间减退款撤销时间大于15天时，订单首次收入登记时间取收入分摊截止时间，否则取退款撤销时间（含恰好15天）；这里取实际指定时间，不额外改为日末。撤销时间晚于本次截止时间时等待后续处理。',
         '反向凭证：按原退款实际分摊记录逐条对应，科目与金额保持一致，借贷方向相反，不限定为三个科目。例如原记录为平台应收账款贷记、合同负债借记、主营业务收入借记，反向记录则分别为平台应收账款借记、合同负债贷记、主营业务收入贷记。反向凭证统计时间取订单首次收入登记时间，同一撤销事件不重复生成反向凭证。',
         '首次确认：以本次退款撤销后的收入分摊记录判断首次，不以历史原收入或退款反向凭证作为本次首次按日确认的依据。首次确认时主营业务收入贷记、合同负债借记。金额四舍五入保留三位小数，展示省略末尾零。',
         '补摊与统计时间：首次收入登记日期与截止日期不是同一天时，按太平洋日期逐日补齐该范围内尚未处理的收入及合同负债明细。首次收入明细及退款反向凭证统计时间取订单首次收入登记时间；非首次明细按本次要求取收入分摊截止时间。',

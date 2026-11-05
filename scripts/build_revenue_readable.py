@@ -6,6 +6,7 @@ import base64
 from urllib.parse import quote, unquote
 from revenue_formula_styles import FORMULAS, draw_formula, draw_formula_condition, draw_posting, posting_node, style_xml
 from revenue_reversal_flow import configure as configure_reversal
+from revenue_flowchart_terms import apply_wording
 
 # Reuse the existing chart definitions and renderer without running its old export.
 source = Path(__file__).with_name('build_revenue_flowcharts.py').read_text()
@@ -229,6 +230,8 @@ move={
 }
 
 configure_reversal(pages, texts, meta, notes, move, FORMULAS, scope)
+apply_wording(texts, meta, notes, FORMULAS)
+DATA_VALIDATION_NOTES = notes['checks']
 
 flow_references={
     '「登记时间与特殊订单」':'二、「登记时间与特殊订单」',
