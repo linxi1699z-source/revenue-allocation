@@ -67,9 +67,9 @@ texts = {
 'daily': '权益过期时间 > 收入登记时间\n本次主营业务收入＝每日预估收入',
 'recognize': '增加主营业务收入与合同负债分摊记录\n贷记：主营业务收入，金额为以上公式计算金额\n借记：合同负债，金额为以上公式计算金额\n分摊明细统计时间取收入分摊截止时间',
 'update': '更新已确认收入与剩余合同负债\n检查是否已补齐首次收入登记日至截止日期的明细\n补充明细只需生成至权益过期日期',
-'done': '权益过期时间 ≤ 收入登记时间，或\n剩余合同负债为 0？',
+'done': '权益过期时间 ≤ 当前收入登记时间？',
 'more': '本次分摊范围内仍有缺失日期？',
-'finish': '收入分摊状态设为「完成分摊」\n执行完成分摊时的金额校验',
+'finish': '收入分摊状态设为「完成分摊」\n进入「数据校验与分摊状态」流程',
 'next': '取下一个需要补充的分摊日\n继续生成主营业务收入与合同负债明细',
 'ongoing': '收入分摊状态设为「分摊中」\n等待下一次每日收入分摊',
 },
@@ -230,6 +230,36 @@ move={
 }
 
 configure_reversal(pages, texts, meta, notes, move, FORMULAS, scope)
+
+# Apply the same expiry gate wherever a workflow decides whether entitlement ended.
+expiry_condition='权益过期时间 ≤ 当前收入登记时间？'
+texts['sameday']['revoked']=expiry_condition
+texts['partial']['expired']=expiry_condition
+notes['sameday'][1]='已确认规则：净收入大于0且权益过期时间 ≤ 当前收入登记时间时，一次确认退款后的净收入；主营业务收入为贷记，合同负债为借记，两条分摊记录金额均为净收入，完成后进入流程七。'
+
+# A zero remaining liability no longer independently completes partial allocation.
+texts['partial'].update({
+    'equalend':'更新已确认收入与剩余合同负债',
+    'equal_expired':expiry_condition,
+    'equal_finish':'收入分摊状态设为「完成分摊」\n进入「数据校验与分摊状态」流程',
+    'equal_wait':'尚未到权益过期时间\n收入分摊状态保持「分摊中」\n进入「数据校验与分摊状态」校验本次记录\n等待下一次收入分摊',
+})
+for node_id,row,col,kind in [('equal_expired',4,0,'decision'),('equal_finish',5,0,'process'),('equal_wait',4,2,'process')]:
+    partial_page.n(node_id,texts['partial'][node_id],row,col,kind)
+partial_page.e('equalend','equal_expired')
+partial_page.e('equal_expired','equal_finish','是')
+partial_page.e('equal_expired','equal_wait','否',True)
+move['partial'].update({'book':(5,1),'expired':(6,1),'settle':(7,1),'keep':(6,2),'finished':(8,1),
+                        'equal_expired':(4,0),'equal_finish':(5,0),'equal_wait':(4,2)})
+
+notes['normal'].append('完成条件：权益过期时间 ≤ 当前收入登记时间时，设置完成分摊并进入流程七；剩余合同负债为0不再作为独立的完成分摊条件。')
+notes['partial'].append('完成条件：两条部分退款处理分支均按权益过期时间 ≤ 当前收入登记时间判断是否到期；到期后设置完成分摊并进入流程七，未到期保持分摊中。剩余合同负债为0不再单独触发完成分摊。')
+for page_id in ('normal','sameday','fullrefund','partial','reversal'):
+    for node_id,text in texts[page_id].items():
+        text=text.replace('执行分摊明细校验','进入「数据校验与分摊状态」流程')
+        text=text.replace('执行完成分摊时的金额校验','进入「数据校验与分摊状态」流程')
+        texts[page_id][node_id]=text
+
 apply_wording(texts, meta, notes, FORMULAS)
 DATA_VALIDATION_NOTES = notes['checks']
 
@@ -304,7 +334,8 @@ def note_layout(p):
     top=180
     total_height=sum(heights)+14*(len(contents)-1)
     right=max(n['x']+n['w'] for n in p.nodes.values())
-    x=right+180
+    # Leave room for separate lanes to different destinations on the two loops.
+    x=right+(340 if p.id in ('normal','reversal') else 180)
     cards=[]
     for text,height in zip(contents,heights):
         cards.append(dict(text=text,x=x,y=top,w=card_width,h=height))
@@ -370,9 +401,15 @@ def continuous_route(p,e):
         pts=[(a['x']+a['w'],ay),(lane,ay),(lane,join),(bx,join),end]
         e['ports']=(1,.5,.5,0)
     elif p.id=='reversal' and e['s']=='next':
-        lane=max(n['x']+n['w'] for n in p.nodes.values())+60
+        lane=max(n['x']+n['w'] for n in p.nodes.values())+220
         pts=[(a['x']+a['w'],ay),(lane,ay),(lane,by),(b['x']+b['w'],by)]
         e['ports']=(1,.5,1,.5)
+    elif p.id=='normal' and e['s']=='tail_negative' and e['t']=='update':
+        # The daily amount goes to posting; this reversal goes straight to update.
+        # Different targets must not share the same vertical return lane.
+        lane=max(n['x']+n['w'] for n in p.nodes.values())+140
+        pts=[(a['x']+a['w'],ay),(lane,ay),(lane,end[1]-60),(bx,end[1]-60),end]
+        e['ports']=(1,.5,.5,0)
     elif p.id=='normal' and e['s']=='skipA' and e['t']=='iterate':
         # Give the returning branch its own visible arrow at the right of the node.
         lane=a['x']+a['w']+60
@@ -392,14 +429,14 @@ def continuous_route(p,e):
             'checks': {'amountbad'},
             'dates': {'restoreaction'},
         }.get(p.id,set())
-        if p.id=='partial' and e['s']=='equalend':
+        if p.id=='partial' and e['s']=='equal_finish':
             # This branch has no later steps below it: descend directly to the end.
             pts=[start,(ax,by),(b['x'],by)]
             e['ports']=(.5,1,0,.5)
         elif ax==bx and not scope['crosses'](direct,list(p.nodes.values()),(e['s'],e['t'])):
             pts=direct
         else:
-            lane=max(n['x']+n['w'] for n in p.nodes.values())+100
+            lane=max(n['x']+n['w'] for n in p.nodes.values())+(220 if p.id=='normal' else 100)
             if below or right_exit:
                 pts=[(a['x']+a['w'],ay),(lane,ay),(lane,end[1]-60),(bx,end[1]-60),end]
                 e['ports']=(1,.5,.5,0)
@@ -433,6 +470,22 @@ def continuous_route(p,e):
     return pts
 
 scope['route']=continuous_route
+
+def validate_distinct_target_routes(p):
+    """Only edges with the same actual destination may share a line segment."""
+    from itertools import combinations
+    routed=[(e,continuous_route(p,e)) for e in p.edges]
+    for (a,ap),(b,bp) in combinations(routed,2):
+        if a['t']==b['t']:
+            continue
+        for start,end in zip(ap,ap[1:]):
+            for other_start,other_end in zip(bp,bp[1:]):
+                for fixed in (0,1):
+                    moving=1-fixed
+                    if start[fixed]==end[fixed]==other_start[fixed]==other_end[fixed]:
+                        overlap=min(max(start[moving],end[moving]),max(other_start[moving],other_end[moving]))-max(min(start[moving],end[moving]),min(other_start[moving],other_end[moving]))
+                        assert overlap<=0,(p.id,'不同目标的连线重合',a['s'],a['t'],b['s'],b['t'],start,end,other_start,other_end)
+
 # Explicit ports preserve intended joins when the editable diagram is opened.
 shared=shared.replace("        ex,ey=(1,.5) if e['side'] and a['kind']=='decision' else (.5,1)",
                       "        ex,ey,entx,enty=e['ports']")
@@ -454,6 +507,7 @@ out=scope['OUT']
 root=ET.Element('mxfile',host='app.diagrams.net',type='device',version='26.0.0')
 images=[]
 for p in pages:
+    validate_distinct_target_routes(p)
     model,w,h=scope['emit_xml'](p)
     style_xml(model,p)
     ET.SubElement(root,'diagram',id=p.id,name=p.title).append(model)
