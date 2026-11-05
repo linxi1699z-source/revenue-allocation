@@ -90,7 +90,7 @@ function incomeExportFiles(orders,start,end,zone){
  if(orderRows.length===1)return [];
  return [{name:'订单明细.csv',text:exportCsv(orderRows)},{name:'分摊明细/日明细.csv',text:exportCsv(daily)},{name:'分摊明细/月明细.csv',text:exportCsv(monthly)}];
 }
-const EXPORT_RECENT_DAYS=3;
+const EXPORT_RECENT_COUNT=3;
 let exportJobs=[],exportBusy=false,exportToastTimer;
 const exportIcon=kind=>kind==='loading'?'<svg class="export-spin" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 1-9 9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>':'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-4-4 4 4 4-4M4 17v3h16v-3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const exportDateTime=timestamp=>new Intl.DateTimeFormat('zh-CN',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).format(timestamp);
@@ -98,9 +98,8 @@ const escapeHtml=value=>String(value).replace(/[&<>"']/g,char=>({'&':'&amp;','<'
 function openExportDb(){return new Promise((resolve,reject)=>{const request=indexedDB.open('ringconn-income-export',1);request.onupgradeneeded=()=>request.result.createObjectStore('jobs',{keyPath:'id'});request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);});}
 async function readExportJobs(){try{const db=await openExportDb();return await new Promise((resolve,reject)=>{const tx=db.transaction('jobs','readonly'),request=tx.objectStore('jobs').getAll();request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);tx.oncomplete=()=>db.close();});}catch{return [];}}
 async function saveExportJob(job){try{const db=await openExportDb();await new Promise((resolve,reject)=>{const tx=db.transaction('jobs','readwrite');tx.objectStore('jobs').put(job);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);});db.close();}catch{/* Keep the result available for this page session. */}}
-function recentExportJobs(now=Date.now()){
- const firstDay=new Date(now);firstDay.setHours(0,0,0,0);firstDay.setDate(firstDay.getDate()-(EXPORT_RECENT_DAYS-1));
- return exportJobs.filter(job=>job.createdAt>=firstDay.getTime()&&job.createdAt<=now).sort((a,b)=>b.createdAt-a.createdAt);
+function recentExportJobs(){
+ return exportJobs.slice().sort((a,b)=>b.createdAt-a.createdAt).slice(0,EXPORT_RECENT_COUNT);
 }
 function renderExportHistory(){
  const jobs=recentExportJobs(),button=$('#export-open');
