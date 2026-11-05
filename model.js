@@ -232,7 +232,7 @@ const FinanceModel = (() => {
   if(!Array.isArray(entries)||!entries.length)throw Error('请新增会计科目');
   let debit=0,credit=0;
   for(const entry of entries){
-   if(!['平台应收账款','合同负债','主营业务收入','财务费用'].includes(entry.account))throw Error('请选择会计科目');
+   if(!['平台应收账款','合同负债','主营业务收入','销售费用'].includes(entry.account))throw Error('请选择会计科目');
    if(!['借记','贷记'].includes(entry.direction))throw Error('请选择借贷方向');
    if(!Number.isSafeInteger(entry.cents)||entry.cents<0)throw Error('请输入非负金额，最多保留 3 位小数');
    if(entry.direction==='借记')debit+=entry.cents;else credit+=entry.cents;
@@ -275,7 +275,7 @@ const FinanceModel = (() => {
   if(o.amountMismatch){rows=rows.map((r,i)=>i===0?{...r,cents:r.cents+1}:r);}
   return rows;
  }
- function reconciliation(o){const rows=ledger(o);const total=(name,normal)=>rows.filter(r=>r.account===name).reduce((s,r)=>s+(r.direction===normal?r.cents:-r.cents),0);const receivable=total('平台应收账款','借记'),financialExpenses=total('财务费用','借记'),revenue=total('主营业务收入','贷记');return {receivable,financialExpenses,revenue,difference:receivable+financialExpenses-revenue};}
+ function reconciliation(o){const rows=ledger(o);const total=(name,normal)=>rows.filter(r=>r.account===name).reduce((s,r)=>s+(r.direction===normal?r.cents:-r.cents),0);const receivable=total('平台应收账款','借记'),financialExpenses=total('销售费用','借记'),revenue=total('主营业务收入','贷记');return {receivable,financialExpenses,revenue,difference:receivable+financialExpenses-revenue};}
  function completeAllocation(o){
   if(!ledger(o).length)throw Error('请先新增分摊记录。');
   if(reconciliation(o).difference!==0)throw Error('完成分摊后，借贷总额不等于已确认收入。');
@@ -327,7 +327,7 @@ const FinanceModel = (() => {
   const total=(account,normal)=>rows.filter(r=>r.account===account).reduce((sum,r)=>sum+(r.direction===normal?r.cents:-r.cents),0);
   const receivable=total('平台应收账款','借记');
   const revenue=total('主营业务收入','贷记');
-  return {receivable,liability:receivable-revenue,revenue,financialExpenses:total('财务费用','借记')};
+  return {receivable,liability:receivable-revenue,revenue,financialExpenses:total('销售费用','借记')};
  }
  function firstAllocationTimestamp(o){const rows=ledger(o);return rows.length?rows[0].timestamp:null;}
  function latestAllocationTimestamp(o){const rows=ledger(o);return rows.length?rows[rows.length-1].timestamp:null;}
