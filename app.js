@@ -90,16 +90,48 @@ function incomeExportFiles(orders,start,end,zone){
  if(orderRows.length===1)return [];
  return [{name:'订单明细.csv',text:exportCsv(orderRows)},{name:'分摊明细/日明细.csv',text:exportCsv(daily)},{name:'分摊明细/月明细.csv',text:exportCsv(monthly)}];
 }
-$('#export-open').onclick=()=>{$('#export-error').textContent='';$('#export-dialog').showModal();};
+const EXPORT_RECENT_DAYS=3;
+let exportJobs=[],exportBusy=false,exportToastTimer;
+const exportIcon=kind=>kind==='loading'?'<svg class="export-spin" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 1-9 9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>':'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-4-4 4 4 4-4M4 17v3h16v-3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const exportDateTime=timestamp=>new Intl.DateTimeFormat('zh-CN',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).format(timestamp);
+const escapeHtml=value=>String(value).replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+function openExportDb(){return new Promise((resolve,reject)=>{const request=indexedDB.open('ringconn-income-export',1);request.onupgradeneeded=()=>request.result.createObjectStore('jobs',{keyPath:'id'});request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);});}
+async function readExportJobs(){try{const db=await openExportDb();return await new Promise((resolve,reject)=>{const tx=db.transaction('jobs','readonly'),request=tx.objectStore('jobs').getAll();request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);tx.oncomplete=()=>db.close();});}catch{return [];}}
+async function saveExportJob(job){try{const db=await openExportDb();await new Promise((resolve,reject)=>{const tx=db.transaction('jobs','readwrite');tx.objectStore('jobs').put(job);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);});db.close();}catch{/* Keep the result available for this page session. */}}
+function recentExportJobs(now=Date.now()){
+ const firstDay=new Date(now);firstDay.setHours(0,0,0,0);firstDay.setDate(firstDay.getDate()-(EXPORT_RECENT_DAYS-1));
+ return exportJobs.filter(job=>job.createdAt>=firstDay.getTime()&&job.createdAt<=now).sort((a,b)=>b.createdAt-a.createdAt);
+}
+function renderExportHistory(){
+ const jobs=recentExportJobs(),button=$('#export-open');
+ button.disabled=exportBusy;button.innerHTML=(exportBusy?exportIcon('loading'):jobs.length?exportIcon('download'):'')+'<span>导出</span>';
+ button.setAttribute('aria-label',exportBusy?'正在生成导出数据':jobs.length?'查看导出记录':'导出');
+ $('#export-history-list').innerHTML=jobs.map(job=>`<div class="export-history-row"><div><strong title="${escapeHtml(job.name)}">${escapeHtml(job.name)}</strong><small>${exportDateTime(job.createdAt)}</small></div><button type="button" data-export-id="${escapeHtml(job.id)}" aria-label="下载 ${escapeHtml(job.name)}" title="下载">${exportIcon('download')}</button></div>`).join('')||'<p class="export-history-empty">暂无导出文件</p>';
+}
+function showExportToast(message){const toast=$('#export-toast');toast.textContent=message;toast.hidden=false;clearTimeout(exportToastTimer);exportToastTimer=setTimeout(()=>toast.hidden=true,4000);}
+function openExportDialog(){$('#export-history').hidden=true;$('#export-error').textContent='';$('#export-dialog').showModal();}
+$('#export-open').onclick=e=>{e.stopPropagation();if(exportBusy)return;if(recentExportJobs().length){$('#export-history').hidden=!$('#export-history').hidden;renderExportHistory();}else openExportDialog();};
+$('#export-new').onclick=openExportDialog;
+$('#export-history-list').onclick=e=>{const button=e.target.closest('[data-export-id]');if(!button)return;const job=recentExportJobs().find(item=>item.id===button.dataset.exportId);if(!job)return;const url=URL.createObjectURL(job.blob),link=document.createElement('a');link.href=url;link.download=job.name;document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);$('#export-history').hidden=true;};
+document.addEventListener('click',e=>{if(!e.target.closest('#export-open,#export-history'))$('#export-history').hidden=true;});
+readExportJobs().then(jobs=>{exportJobs=[...jobs,...exportJobs.filter(job=>!jobs.some(saved=>saved.id===job.id))];renderExportHistory();});
 for(const id of ['export-close','export-cancel'])$('#'+id).onclick=()=>$('#export-dialog').close();
 $('#export-dialog').onclick=e=>{if(e.target===$('#export-dialog')){const r=e.target.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)e.target.close();}};
-$('#export-form').onsubmit=e=>{
+$('#export-form').onsubmit=async e=>{
  e.preventDefault();const form=e.target,start=form.elements.start.value,end=form.elements.end.value,error=$('#export-error');
  if(!start||!end){error.textContent='请选择导出时间范围';return;}
  if(start>end){error.textContent='开始日期不能晚于结束日期';return;}
- const files=incomeExportFiles(state.filtered,start,end,state.timezone);
- if(!files.length){error.textContent='所选时间范围内暂无可导出的分摊数据';return;}
- try{const url=URL.createObjectURL(exportZip(files)),a=document.createElement('a');a.href=url;a.download=`收入分摊_${start}_${end}.zip`;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);$('#export-dialog').close();}catch(err){error.textContent='导出失败，请重试';}
+ if((Date.parse(end+'T00:00:00Z')-Date.parse(start+'T00:00:00Z'))/86400000>365){error.textContent='最大时间段为 1 年。';return;}
+ const orders=[...state.filtered],zone=state.timezone;
+ $('#export-dialog').close();exportBusy=true;renderExportHistory();showExportToast('正在生成数据，请稍后查看导出结果并下载');
+ try{
+  await new Promise(resolve=>setTimeout(resolve,900));
+  const files=incomeExportFiles(orders,start,end,zone);
+  if(!files.length)throw Error('所选时间范围内暂无可导出的分摊数据');
+  const job={id:crypto.randomUUID(),name:`收入分摊_${start}_${end}.zip`,createdAt:Date.now(),blob:exportZip(files)};
+  exportJobs.unshift(job);await saveExportJob(job);showExportToast('数据已生成，可点击导出按钮下载');
+ }catch(err){showExportToast(err.message||'导出失败，请重试');}
+ finally{exportBusy=false;renderExportHistory();}
 };
 
 let amountOrder=null;
@@ -192,8 +224,9 @@ function drawRangeCalendar(){
 function closeRangeCalendar(){if($('#range-calendar').matches(':popover-open'))$('#range-calendar').hidePopover();rangeDraft=null;}
 for(const box of document.querySelectorAll('.unified-range'))box.querySelector('button').onclick=()=>{
  closeRangeCalendar();const [start,end]=box.querySelectorAll('input[type=hidden]'),today=FinanceModel.dateInZone(Date.now(),state.timezone),date=(start.value||today).slice(0,10).split('-').map(Number);
- rangeDraft={box,start:start.value.slice(0,10),end:end.value.slice(0,10),year:date[0],month:date[1]-1};
- const calendar=$('#range-calendar');(box.closest('[popover]')||document.body).append(calendar);
+ const firstMonth=box.dataset.range==='export'&&!start.value?date[1]-2:date[1]-1;
+ rangeDraft={box,start:start.value.slice(0,10),end:end.value.slice(0,10),year:date[0],month:firstMonth};
+ const calendar=$('#range-calendar');(box.closest('dialog')||box.closest('[popover]')||document.body).append(calendar);
  drawRangeCalendar();calendar.showPopover();const r=box.getBoundingClientRect(),h=calendar.getBoundingClientRect().height;
  calendar.style.left=Math.max(8,Math.min(r.left,innerWidth-596))+'px';calendar.style.top=Math.max(8,r.bottom+h+8>innerHeight?r.top-h-8:r.bottom+8)+'px';
 };
@@ -204,12 +237,13 @@ function applyRange(clear=false){
  if(!rangeDraft)return;const {box}=rangeDraft,[start,end]=box.querySelectorAll('input[type=hidden]'),stat=box.dataset.range==='stat';
  const a=clear?'':rangeDraft.start,b=clear?'':rangeDraft.end;
  if(!clear&&a>b){$('#range-selection').textContent='开始时间不能晚于结束时间';return;}
- start.value=a;end.value=b;closeRangeCalendar();syncRangeLabels();if(stat)box.closest('form').requestSubmit();
+ start.value=a;end.value=b;closeRangeCalendar();syncRangeLabels();if(stat)box.closest('form').requestSubmit();if(box.dataset.range==='export')$('#export-error').textContent='';
 }
 $('#range-clear').onclick=()=>applyRange(true);$('#range-apply').onclick=()=>applyRange();
 document.addEventListener('mousedown',e=>{if(rangeDraft&&!$('#range-calendar').contains(e.target)&&!rangeDraft.box.contains(e.target))closeRangeCalendar();});
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&rangeDraft){closeRangeCalendar();e.preventDefault();}});
 document.addEventListener('toggle',e=>{if(e.newState==='closed'&&rangeDraft&&e.target.contains(rangeDraft.box))closeRangeCalendar();},true);
+$('#export-dialog').addEventListener('close',closeRangeCalendar);
 syncRangeLabels();
 
 const PACIFIC_ZONE='America/Los_Angeles';
