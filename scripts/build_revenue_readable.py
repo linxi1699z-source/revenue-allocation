@@ -435,7 +435,18 @@ def continuous_route(p,e):
             'checks': {'amountbad'},
             'dates': {'restoreaction'},
         }.get(p.id,set())
-        if p.id=='partial' and e['s']=='equal_finish':
+        if p.id=='reversal' and ax!=bx:
+            # Empty columns descend directly into the right of the end node.
+            # Earlier side branches bypass later boxes via the outer lane.
+            right_end=(b['x']+b['w'],by)
+            if below:
+                lane=max(n['x']+n['w'] for n in p.nodes.values())+100
+                pts=[(a['x']+a['w'],ay),(lane,ay),(lane,by),right_end]
+                e['ports']=(1,.5,1,.5)
+            else:
+                pts=[start,(ax,by),right_end]
+                e['ports']=(.5,1,1,.5)
+        elif p.id=='partial' and e['s']=='equal_finish':
             # This branch has no later steps below it: descend directly to the end.
             pts=[start,(ax,by),(b['x'],by)]
             e['ports']=(.5,1,0,.5)

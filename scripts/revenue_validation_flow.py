@@ -152,15 +152,15 @@ def configure(pages, texts, meta, notes, move, formulas):
         'done':'权益过期时间 ≤ 收入分摊截止时间？',
         'ongoing':'逐组校验通过，尚未到权益过期时间\n写入本次分摊记录\n更新已确认收入与剩余合同负债\n收入分摊状态设为「分摊中」\n等待下一次收入分摊',
     })
-    for node,row,col,kind in [('group_balance',16,0,'decision'),('group_bad',16,1,'error')]:
+    for node,row,col,kind in [('group_balance',15,0,'decision'),('group_bad',15,1,'error')]:
         reversal.n(node,texts['reversal'][node],row,col,kind)
     for edge in reversal.edges:
         if edge['s'] in ('first_update','update') and edge['t']=='done':
             edge['t']='group_balance'
     reversal.e('group_balance','done','是')
     reversal.e('group_balance','group_bad','否',True)
-    move['reversal']={'group_balance':(16,0),'group_bad':(16,1),'done':(17,0),
-                      'ongoing':(17,2),'finish':(18,0)}
+    move['reversal']={'group_balance':(15,0),'group_bad':(15,1),'done':(16,0),
+                      'ongoing':(16,2),'finish':(17,0)}
     meta['reversal']=('八、退款撤销收入分摊',
         '退款撤销先预生成记录并逐组校验；到期后进入流程七，无异常才写入记录、更新金额并完成分摊。',
         meta['reversal'][2])
