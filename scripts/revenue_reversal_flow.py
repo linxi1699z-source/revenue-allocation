@@ -128,10 +128,8 @@ def configure(pages, texts, meta, notes, move, formulas, scope):
         'positive': '记录非负的主营业务收入金额\n贷记：主营业务收入，金额为公式计算金额\n借记：合同负债，金额为公式计算金额\n统计时间为收入分摊截止时间',
         'negative': '冲回多确认的主营业务收入\n借记：主营业务收入，金额为公式结果绝对值\n贷记：合同负债，金额为公式结果绝对值\n统计时间为收入分摊截止时间',
         'update': '更新已确认收入与剩余合同负债',
-        'done': '权益过期时间 ≤ 当前收入登记时间？',
+        'done': '权益过期时间 ≤ 收入分摊截止时间？',
         'finish': '收入分摊状态设为「完成分摊」\n进入「数据校验与分摊状态」流程',
-        'more': '首次收入登记日至截止时间范围内\n仍有未处理的分摊日？',
-        'next': '取下一个待补充分摊日',
         'ongoing': '保持收入分摊状态「分摊中」\n执行「数据校验与分摊状态」的本次金额校验\n等待下一次收入分摊',
     }
     reversal = scope['Page']('reversal', '', '', '')
@@ -148,8 +146,7 @@ def configure(pages, texts, meta, notes, move, formulas, scope):
         ('tail', 12, 1, 'process'), ('daily', 11, 2, 'process'),
         ('sign', 13, 1, 'decision'), ('positive', 14, 1, 'process'), ('negative', 13, 2, 'process'),
         ('update', 15, 1, 'process'), ('done', 16, 0, 'decision'),
-        ('finish', 17, 0, 'process'), ('more', 16, 1, 'decision'),
-        ('next', 17, 1, 'process'), ('ongoing', 16, 2, 'process'),
+        ('finish', 17, 0, 'process'), ('ongoing', 16, 2, 'process'),
     ]:
         reversal.n(node_id, texts['reversal'][node_id], row, col, kind)
     for a, b in [('start', 'record'), ('record', 'same_day'), ('event_time', 'status'),
@@ -157,7 +154,7 @@ def configure(pages, texts, meta, notes, move, formulas, scope):
                  ('estimate', 'time_ready'), ('first_amount', 'first_post'),
                  ('first_post', 'first_update'), ('first_update', 'done'),
                  ('select_day', 'expired'), ('tail', 'sign'), ('daily', 'sign'),
-                 ('positive', 'update'), ('negative', 'update'), ('update', 'done'), ('next', 'select_day')]:
+                 ('positive', 'update'), ('negative', 'update'), ('update', 'done')]:
         reversal.e(a, b)
     for a, b, label, side in [
         ('same_day', 'due', '否', False), ('same_day', 'ordinary', '是', True),
@@ -167,8 +164,7 @@ def configure(pages, texts, meta, notes, move, formulas, scope):
         ('first', 'first_amount', '是', False), ('first', 'select_day', '否', True),
         ('expired', 'tail', '是', False), ('expired', 'daily', '否', True),
         ('sign', 'positive', '是', False), ('sign', 'negative', '否', True),
-        ('done', 'finish', '是', False), ('done', 'more', '否', True),
-        ('more', 'next', '是', False), ('more', 'ongoing', '否', True),
+        ('done', 'finish', '是', False), ('done', 'ongoing', '否', True),
     ]:
         reversal.e(a, b, label, side)
     meta['reversal'] = ('八、退款撤销收入分摊', '苹果跨日退款撤销先按原退款实际科目与金额生成反向凭证，再重新预估收入并按日分摊；同日退款撤销按普通无退款流程处理。', '本次用户确认的退款撤销规则')

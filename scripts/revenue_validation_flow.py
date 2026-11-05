@@ -143,3 +143,35 @@ def configure(pages, texts, meta, notes, move, formulas):
     for node in ('first_update','update'):
         texts['reversal'][node]=texts['reversal'][node].replace('更新已确认收入与剩余合同负债','计算更新后的已确认收入与剩余合同负债\n待流程七通过后保存')
     notes['reversal']=[note.replace('设置完成分摊并进入流程七','先进入流程七，无异常后写入记录、更新金额并设置完成分摊') for note in notes['reversal']]
+
+    # Reversal settlement: validate all posting groups before the cutoff-date gate.
+    reversal=by_id['reversal']
+    texts['reversal'].update({
+        'group_balance':texts['normal']['group_balance'],
+        'group_bad':texts['checks']['batch_alert'],
+        'done':'权益过期时间 ≤ 收入分摊截止时间？',
+        'ongoing':'逐组校验通过，尚未到权益过期时间\n写入本次分摊记录\n更新已确认收入与剩余合同负债\n收入分摊状态设为「分摊中」\n等待下一次收入分摊',
+    })
+    for node,row,col,kind in [('group_balance',16,0,'decision'),('group_bad',16,1,'error')]:
+        reversal.n(node,texts['reversal'][node],row,col,kind)
+    for edge in reversal.edges:
+        if edge['s'] in ('first_update','update') and edge['t']=='done':
+            edge['t']='group_balance'
+    reversal.e('group_balance','done','是')
+    reversal.e('group_balance','group_bad','否',True)
+    move['reversal']={'group_balance':(16,0),'group_bad':(16,1),'done':(17,0),
+                      'ongoing':(17,2),'finish':(18,0)}
+    meta['reversal']=('八、退款撤销收入分摊',
+        '退款撤销先预生成记录并逐组校验；到期后进入流程七，无异常才写入记录、更新金额并完成分摊。',
+        meta['reversal'][2])
+    for node,title in {
+        'reverse':'按实际原退款记录预生成反向凭证',
+        'first_post':'预生成退款撤销后首次收入记录',
+        'positive':'预生成非负的主营业务收入记录',
+        'negative':'预生成多确认主营业务收入的冲回记录',
+    }.items():
+        _,*body=texts['reversal'][node].split('\n')
+        texts['reversal'][node]='\n'.join([title]+body)
+    notes['reversal'][4]=notes['reversal'][4].replace('权益过期时间 ≤ 当前收入登记时间时',
+                                                   '权益过期时间 ≤ 收入分摊截止时间时')
+    notes['reversal'].append('收尾校验：本次反向凭证与收入分摊记录先预生成，每一组借贷金额都必须相等；有任一组不等时，不写入本次记录并设为分摊异常。逐组通过后，权益过期时间 ≤ 收入分摊截止时间时进入流程七，无异常后写入记录、更新已确认收入与剩余合同负债并完成分摊，否则不写入并设为分摊异常；未到期则写入通过逐组校验的记录，保持分摊中。收尾不再设置未处理分摊日判断与取下一日回环。')

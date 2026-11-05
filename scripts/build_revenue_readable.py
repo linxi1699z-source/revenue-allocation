@@ -297,7 +297,7 @@ for p in pages:
             node['h']=320  # Two separate formulas, with breaks only at operators.
         if p.id=='checks' and node['id']=='calc':
             node['h']=400
-        if p.id in ('checks','normal') and node['id'] in ('batch_alert','amountbad','group_bad','expiry_error'):
+        if p.id in ('checks','normal','reversal') and node['id'] in ('batch_alert','amountbad','group_bad','expiry_error'):
             node['h']=320
         node['x']=70+800*col+(600-node['w'])/2
         node['y']=260+420*row-node['h']/2
@@ -405,10 +405,6 @@ def continuous_route(p,e):
         join=b['y']-60
         pts=[(a['x']+a['w'],ay),(lane,ay),(lane,join),(bx,join),end]
         e['ports']=(1,.5,.5,0)
-    elif p.id=='reversal' and e['s']=='next':
-        lane=max(n['x']+n['w'] for n in p.nodes.values())+220
-        pts=[(a['x']+a['w'],ay),(lane,ay),(lane,by),(b['x']+b['w'],by)]
-        e['ports']=(1,.5,1,.5)
     elif p.id=='checks' and e['s']=='next_group' and e['t']=='batch_balance':
         lane=max(n['x']+n['w'] for n in p.nodes.values())+220
         top=b['y']-60
