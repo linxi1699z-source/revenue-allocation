@@ -5,6 +5,7 @@ import zlib
 import base64
 from urllib.parse import quote, unquote
 from revenue_formula_styles import FORMULAS, draw_formula, draw_formula_condition, draw_posting, posting_node, style_xml
+from revenue_reversal_flow import configure as configure_reversal
 
 # Reuse the existing chart definitions and renderer without running its old export.
 source = Path(__file__).with_name('build_revenue_flowcharts.py').read_text()
@@ -227,6 +228,8 @@ move={
 'partial':{'less':(1,2),'expired':(5,1),'settle':(6,1),'keep':(5,2),'finished':(7,1)}
 }
 
+configure_reversal(pages, texts, meta, notes, move, FORMULAS, scope)
+
 flow_references={
     '「登记时间与特殊订单」':'二、「登记时间与特殊订单」',
     '「无退款收入分摊」':'三、「无退款收入分摊」',
@@ -235,6 +238,7 @@ flow_references={
     '「部分退款分摊」':'六、「部分退款分摊」',
     '「数据校验与分摊状态」':'七、「数据校验与分摊状态」',
     '进入数据校验与分摊状态流程':'进入七、「数据校验与分摊状态」',
+    '「退款撤销收入分摊」':'八、「退款撤销收入分摊」',
 }
 
 def add_flow_reference_numbers(text):
@@ -286,7 +290,7 @@ for p in pages:
             p.e(node['id'],final_id)
             p.edges[-1]['closing']=True
 
-scope['LEGEND']='颜色说明：紫色为计算公式，蓝色为时间选取或统计时间，青绿色为借记分录，橙色为贷记分录。\n时间与金额口径：均按太平洋时间对应日期统计；每日明细统计时间为23:59:59。已确认收入与剩余合同负债在本次分摊完成后更新。'
+scope['LEGEND']='颜色说明：紫色为计算公式，蓝色为时间选取或统计时间，青绿色为借记分录，橙色为贷记分录。\n时间与金额口径：使用太平洋时间；登记时间及明细统计时间以各节点为准。已确认收入与剩余合同负债在本次分摊完成后更新。'
 
 def note_layout(p):
     """Keep every annotation in a fixed upper-right column, clear of flow nodes."""
@@ -342,7 +346,15 @@ def continuous_route(p,e):
     e['ports']=(.5,1,.5,0)
     below=any(n['id'] not in (e['s'],e['t'],p.final_id) and n['y']>=a['y']+a['h']
               and max(a['x'],n['x'])<min(a['x']+a['w'],n['x']+n['w']) for n in p.nodes.values())
-    if p.id=='normal' and e['s']=='skipA' and e['t']=='iterate':
+    if p.id=='dates' and e['s']=='restore_same' and e['t']=='long':
+        lane=1530
+        pts=[(a['x']+a['w'],ay),(lane,ay),(lane,end[1]-60),(bx,end[1]-60),end]
+        e['ports']=(1,.5,.5,0)
+    elif p.id=='reversal' and e['s']=='next':
+        lane=max(n['x']+n['w'] for n in p.nodes.values())+60
+        pts=[(a['x']+a['w'],ay),(lane,ay),(lane,by),(b['x']+b['w'],by)]
+        e['ports']=(1,.5,1,.5)
+    elif p.id=='normal' and e['s']=='skipA' and e['t']=='iterate':
         # Give the returning branch its own visible arrow at the right of the node.
         lane=a['x']+a['w']+60
         pts=[(a['x']+a['w'],ay),(lane,ay),(lane,by),(b['x']+b['w'],by)]
@@ -359,6 +371,7 @@ def continuous_route(p,e):
             'fullrefund': {'wait'},
             'partial': {'keep'},
             'checks': {'amountbad'},
+            'dates': {'restoreaction'},
         }.get(p.id,set())
         if p.id=='partial' and e['s']=='equalend':
             # This branch has no later steps below it: descend directly to the end.

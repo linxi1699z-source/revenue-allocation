@@ -14,7 +14,7 @@
   let viewMode = 'reading';
   const escaped = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
-  $('fullscreen-flow-tabs').innerHTML = pages.map(page => `<a class="fullscreen-flow-tab" href="#${page.id}" data-page="${page.id}"><span class="flow-tab-number">流程${'一二三四五六七'[page.number-1]}</span><span>${escaped(page.title)}</span></a>`).join('');
+  $('fullscreen-flow-tabs').innerHTML = pages.map(page => `<a class="fullscreen-flow-tab" href="#${page.id}" data-page="${page.id}"><span class="flow-tab-number">流程${'一二三四五六七八'[page.number-1]}</span><span>${escaped(page.title)}</span></a>`).join('');
   function syncZoom() {
     scale = Math.max(.01, Math.min(2, scale));
     scene.style.width = `${current.width * scale}px`;
@@ -68,6 +68,8 @@
     $('details-title').textContent = '步骤详情';
     const kinds = {decision:'条件判断',terminal:node.text==='结束'?'流程结束':'流程入口',warning:'异常预警',process:'处理步骤'};
     $('details-content').innerHTML = `<div class="detail-kind">${kinds[node.kind]}</div><div class="node-detail">${node.html}</div><button class="back-to-rules" id="back-to-rules">查看本流程规则与备注 →</button>`;
+    const linkedPages=pages.filter(page=>page.id!==current.id && node.text.includes(page.title));
+    $('details-content').insertAdjacentHTML('beforeend',linkedPages.map(page=>`<div><a class="back-to-rules" href="#${page.id}">打开流程${'一二三四五六七八'[page.number-1]} ${escaped(page.title)} →</a></div>`).join(''));
     $('back-to-rules').addEventListener('click',rules);
     setPanel(true);
   }
@@ -77,7 +79,7 @@
     if (current?.id===page.id) return;
     current = page;
     selected = null;
-    $('diagram-title').textContent = `流程${'一二三四五六七'[page.number-1]} ${page.title}`;
+    $('diagram-title').textContent = `流程${'一二三四五六七八'[page.number-1]} ${page.title}`;
     document.title = `${page.title} · 收入分摊业务流程`;
     $('flow-description').textContent = page.description;
     $('node-count').textContent = `${page.nodes.length} 个节点 · ${page.decisions} 个判断`;

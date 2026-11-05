@@ -18,3 +18,5 @@
 .fullscreen-flow-tab:hover{border-color:var(--tag-color);box-shadow:0 0 0 1px var(--tag-color)}
 .fullscreen-flow-tab.active{background:var(--tag-color);border-color:var(--tag-color);color:#fff;font-weight:600}
 .flow-tab-number{font-size:10px;opacity:.75}.fullscreen-flow-tab.active .flow-tab-number{opacity:1}
+
+.fullscreen-flow-tab:nth-child(8){--tag-color:#6c7d28;--tag-bg:#f6f9e9;--tag-border:#d8e2ad}
