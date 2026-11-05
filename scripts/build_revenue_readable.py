@@ -426,11 +426,10 @@ def continuous_route(p,e):
         pts=[(a['x']+a['w'],ay),(lane,ay),(lane,by),(b['x']+b['w'],by)]
         e['ports']=(1,.5,1,.5)
     elif p.id=='normal' and e['s']=='next' and e['t']=='iterate':
-        # The daily loop enters from the left instead of sharing the main-path arrow.
-        bottom=max(n['y']+n['h'] for n in p.nodes.values() if n['id']!=p.final_id)+60
+        # Return upward directly; same-target return edges may share their final leg.
         lane=max(n['x']+n['w'] for n in p.nodes.values())+300
-        pts=[(a['x']+a['w'],ay),(lane,ay),(lane,bottom),(25,bottom),(25,by),(b['x'],by)]
-        e['ports']=(1,.5,0,.5)
+        pts=[(a['x']+a['w'],ay),(lane,ay),(lane,by),(b['x']+b['w'],by)]
+        e['ports']=(1,.5,1,.5)
     elif e.get('closing'):
         direct=[start,end]
         right_exit=e['s'] in {
