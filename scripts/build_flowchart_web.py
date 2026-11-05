@@ -54,7 +54,8 @@ def make_svg(model):
         paths.append('<polyline points="'+' '.join(f'{x:g},{y:g}' for x,y in points)+f'" fill="none" stroke="{color}" stroke-width="{weight}" marker-end="url(#{arrow})"/>')
         if cell.get('value'):
             (x,y),(nx,ny)=points[:2]
-            lx=x+26 if nx!=x else x+17;ly=y-9 if nx!=x else y+27
+            lx=x+26 if nx>x else x-42 if nx<x else x+17
+            ly=y-9 if nx!=x else y+27
             labels.append(f'<g><rect x="{lx-10}" y="{ly-18}" width="32" height="28" rx="5" fill="white"/><text x="{lx+6}" y="{ly+2}" text-anchor="middle" font-size="17" fill="#526779">{escape(cell.get("value"))}</text></g>')
     shapes=[];details=[]
     for node_id,cell in nodes.items():

@@ -320,6 +320,7 @@ scope['note_layout']=note_layout
 shared=source[source.index('def wrap('):source.index("mx=ET.Element('mxfile'")]
 shared=shared.replace("ImageFont.truetype(FONT,18)","ImageFont.truetype(FONT,20)")
 shared=shared.replace("fontSize=17;fontColor", "fontSize=20;fontColor")
+shared=shared.replace("xx=x0+22 if x1!=x0 else x0+12", "xx=x0+22 if x1>x0 else x0-42 if x1<x0 else x0+12")
 shared=shared.replace("    width=max(n['x']+n['w'] for n in p.nodes.values())+130", "    cards=note_layout(p)\n    width=max(max(n['x']+n['w'] for n in p.nodes.values()),max(card['x']+card['w'] for card in cards))+80")
 start=shared.index("    y=max(n['y']+n['h'] for n in p.nodes.values())+85",shared.index('def emit_xml'))
 end=shared.index('    return model,width,y+40',start)+len('    return model,width,y+40')
@@ -349,9 +350,24 @@ def continuous_route(p,e):
     e['ports']=(.5,1,.5,0)
     below=any(n['id'] not in (e['s'],e['t'],p.final_id) and n['y']>=a['y']+a['h']
               and max(a['x'],n['x'])<min(a['x']+a['w'],n['x']+n['w']) for n in p.nodes.values())
-    if p.id=='dates' and e['s']=='restore_same' and e['t']=='long':
-        lane=1530
-        pts=[(a['x']+a['w'],ay),(lane,ay),(lane,end[1]-60),(bx,end[1]-60),end]
+    if p.id=='dates' and e['s']=='restore' and e['t']=='restore_same':
+        # Enter the same-day check from above, leaving its left outlet free.
+        lane=a['x']+a['w']+60
+        top=b['y']-60
+        pts=[(a['x']+a['w'],ay),(lane,ay),(lane,top),(bx,top),end]
+        e['ports']=(1,.5,.5,0)
+    elif p.id=='dates' and e['s']=='restore_same' and e['t']=='long':
+        # Same-day reversals join ordinary registration through the left gap,
+        # clear of the two cross-day date selections and their right-hand merge.
+        lane=770
+        pts=[(a['x'],ay),(lane,ay),(lane,end[1]-60),(bx,end[1]-60),end]
+        e['ports']=(0,.5,.5,0)
+    elif p.id=='dates' and e['s'] in ('restore_time','restore_cut') and e['t']=='restoreaction':
+        # Both registration results leave on the right and share one outer
+        # orthogonal route directly into workflow eight, without crossing boxes.
+        lane=max(p.nodes[node]['x']+p.nodes[node]['w'] for node in ('restore_time','restore_cut','restoreaction'))+100
+        join=b['y']-60
+        pts=[(a['x']+a['w'],ay),(lane,ay),(lane,join),(bx,join),end]
         e['ports']=(1,.5,.5,0)
     elif p.id=='reversal' and e['s']=='next':
         lane=max(n['x']+n['w'] for n in p.nodes.values())+60
