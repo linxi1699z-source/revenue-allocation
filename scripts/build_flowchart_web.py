@@ -47,7 +47,7 @@ def make_svg(model):
         points=[p for i,p in enumerate(points) if i==0 or p!=points[i-1]]
         assert all(a[0]==b[0] or a[1]==b[1] for a,b in zip(points,points[1:])),cell.get('id')
         bounds+=points
-        returning=cell.get('source') in ('skipA','next') and cell.get('target')=='iterate'
+        returning=(cell.get('source') in ('skipA','next') and cell.get('target')=='iterate') or (cell.get('source')=='next_group' and cell.get('target')=='batch_balance')
         arrow='return-arrow' if returning else 'arrow'
         color='#526D7C' if returning else '#7C8D9F'
         weight='2.2' if returning else '1.8'

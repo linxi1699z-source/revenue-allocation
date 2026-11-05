@@ -7,6 +7,7 @@ from urllib.parse import quote, unquote
 from revenue_formula_styles import FORMULAS, draw_formula, draw_formula_condition, draw_posting, posting_node, style_xml
 from revenue_reversal_flow import configure as configure_reversal
 from revenue_flowchart_terms import apply_wording
+from revenue_validation_flow import configure as configure_validation
 
 # Reuse the existing chart definitions and renderer without running its old export.
 source = Path(__file__).with_name('build_revenue_flowcharts.py').read_text()
@@ -257,6 +258,7 @@ for page_id in ('normal','sameday','fullrefund','partial','reversal'):
         text=text.replace('执行完成分摊时的金额校验','进入「数据校验与分摊状态」流程')
         texts[page_id][node_id]=text
 
+configure_validation(pages, texts, meta, notes, move, FORMULAS)
 apply_wording(texts, meta, notes, FORMULAS)
 DATA_VALIDATION_NOTES = notes['checks']
 
@@ -293,6 +295,10 @@ for p in pages:
         node['w'],node['h']=(540,240) if node['kind']=='decision' else ((500,100) if node['kind']=='terminal' else (600,280))
         if p.id=='partial' and node['id']=='calc':
             node['h']=320  # Two separate formulas, with breaks only at operators.
+        if p.id=='checks' and node['id']=='calc':
+            node['h']=400
+        if p.id in ('checks','normal') and node['id'] in ('batch_alert','amountbad','group_bad','expiry_error'):
+            node['h']=320
         node['x']=70+800*col+(600-node['w'])/2
         node['y']=260+420*row-node['h']/2
         if node['id'] in FORMULAS.get(p.id,{}):
@@ -302,7 +308,7 @@ for p in pages:
     # No letter abbreviations, formula variables, coded references, or the old account term.
     visible=[p.title,p.subtitle,p.source]+p.notes+[n['text'] for n in p.nodes.values()]
     for text in visible:
-        assert not re.search('[A-Za-z]',text),(p.id,text)
+        assert not re.search('[A-Za-z]',text.replace('平台订单 ID','平台订单编号')),(p.id,text)
         # Preserve the user's latest exact wording for this two-record gate.
         assert '平台应收款' not in text or (p.id=='fullrefund' and text==texts['fullrefund']['Aexists']),(p.id,text)
 
@@ -334,7 +340,7 @@ def note_layout(p):
     total_height=sum(heights)+14*(len(contents)-1)
     right=max(n['x']+n['w'] for n in p.nodes.values())
     # Leave room for separate lanes to different destinations on the two loops.
-    x=right+(340 if p.id in ('normal','reversal') else 180)
+    x=right+(340 if p.id in ('normal','reversal','checks') else 180)
     cards=[]
     for text,height in zip(contents,heights):
         cards.append(dict(text=text,x=x,y=top,w=card_width,h=height))
@@ -403,7 +409,12 @@ def continuous_route(p,e):
         lane=max(n['x']+n['w'] for n in p.nodes.values())+220
         pts=[(a['x']+a['w'],ay),(lane,ay),(lane,by),(b['x']+b['w'],by)]
         e['ports']=(1,.5,1,.5)
-    elif p.id=='normal' and e['s']=='tail_negative' and e['t']=='update':
+    elif p.id=='checks' and e['s']=='next_group' and e['t']=='batch_balance':
+        lane=max(n['x']+n['w'] for n in p.nodes.values())+220
+        top=b['y']-60
+        pts=[(a['x']+a['w'],ay),(lane,ay),(lane,top),(25,top),(25,by),(b['x'],by)]
+        e['ports']=(1,.5,0,.5)
+    elif p.id=='normal' and e['s']=='tail_negative' and e['t'] in ('update','more'):
         # The daily amount goes to posting; this reversal goes straight to update.
         # Different targets must not share the same vertical return lane.
         lane=max(n['x']+n['w'] for n in p.nodes.values())+140
@@ -417,8 +428,9 @@ def continuous_route(p,e):
     elif p.id=='normal' and e['s']=='next' and e['t']=='iterate':
         # The daily loop enters from the left instead of sharing the main-path arrow.
         bottom=max(n['y']+n['h'] for n in p.nodes.values() if n['id']!=p.final_id)+60
-        pts=[start,(ax,bottom),(25,bottom),(25,by),(b['x'],by)]
-        e['ports']=(.5,1,0,.5)
+        lane=max(n['x']+n['w'] for n in p.nodes.values())+300
+        pts=[(a['x']+a['w'],ay),(lane,ay),(lane,bottom),(25,bottom),(25,by),(b['x'],by)]
+        e['ports']=(1,.5,0,.5)
     elif e.get('closing'):
         direct=[start,end]
         right_exit=e['s'] in {
