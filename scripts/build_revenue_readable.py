@@ -118,7 +118,7 @@ texts = {
 'equalbook': '冲销剩余合同负债\n贷记：平台应收账款，金额为本笔净退款额\n借记：合同负债，金额为剩余合同负债\n借记：主营业务收入，金额为 0\n明细统计时间为退款登记时间',
 'ratio': '计算已履约比例\n已履约比例＝已确认收入\n÷ 初始平台应收账款 × 100%\n比例保留两位小数',
 'equalend': '更新已确认收入与剩余合同负债\n剩余合同负债为0时，完成分摊\n执行分摊明细校验',
-'calc': '按原文计算需要退回的金额（公式待确认）\n已确认收入退回金额＝已确认收入\n－本笔净退款额 × 已履约比例\n合同负债退回金额＝剩余合同负债\n－（退款后剩余收入－本笔净退款额 × 已履约比例）\n金额保留三位小数',
+'calc': '计算需要退回的金额\n已确认收入退回金额＝已确认收入\n－退款后剩余收入 × 已履约比例\n合同负债退回金额＝剩余合同负债\n－退款后剩余收入 ×（1－已履约比例）\n两项金额均四舍五入，保留三位小数',
 'book': '生成本笔退款分摊明细\n贷记：平台应收账款，金额为本笔净退款额\n借记：主营业务收入，金额为已确认收入退回金额\n借记：合同负债，金额为合同负债退回金额\n明细统计时间为退款登记时间',
 'refresh': '更新已确认收入与剩余合同负债\n检查本次借记总额与贷记总额是否相等\n继续检查权益是否已结束',
 'expired': '权益状态为「已过期（退款）」？',
@@ -176,7 +176,7 @@ notes = {
 '本笔退款明细使用退款登记时间统计。谷歌订单存在多笔退款时，按退款日期逐笔处理；每笔处理后更新已确认收入与剩余合同负债，再处理下一笔。',
 '原文待确认：已完成分摊后全额退款的原文，只规定按已确认收入冲回主营业务收入与平台应收账款，未覆盖净收入小于0产生财务费用、或先前多笔部分退款导致的金额差异。'],
 'partial': [
-'原文公式待确认：初始平台应收账款为100、已确认收入为20、剩余合同负债为80、本笔净退款额为10、退款后剩余收入为90时，已履约比例为20%。按原文公式，已确认收入退回金额为18，合同负债退回金额为负8，出现负的负债退回金额。图中保留原文，需确认后使用。',
+'已确认退款公式：已确认收入退回金额＝已确认收入－退款后剩余收入 × 已履约比例；合同负债退回金额＝剩余合同负债－退款后剩余收入 ×（1－已履约比例）。两项金额均四舍五入，保留三位小数。例如已确认收入20、剩余合同负债80、退款后剩余收入90、已履约比例20%时，两项退回金额分别为2和8。',
 '部分退款后仍可使用权益时，按原文以净收入除以权益总时长计算新的每日预估收入。多笔退款需要明确每笔净收入的对应时点，以及新预估收入从哪一天开始应用。'],
 'checks': DATA_VALIDATION_NOTES,
 }
@@ -231,11 +231,8 @@ move={
 
 configure_reversal(pages, texts, meta, notes, move, FORMULAS, scope)
 
-# Apply the same expiry gate wherever a workflow decides whether entitlement ended.
+# Only replace the final zero-liability completion gate, not refund-status gates.
 expiry_condition='权益过期时间 ≤ 当前收入登记时间？'
-texts['sameday']['revoked']=expiry_condition
-texts['partial']['expired']=expiry_condition
-notes['sameday'][1]='已确认规则：净收入大于0且权益过期时间 ≤ 当前收入登记时间时，一次确认退款后的净收入；主营业务收入为贷记，合同负债为借记，两条分摊记录金额均为净收入，完成后进入流程七。'
 
 # A zero remaining liability no longer independently completes partial allocation.
 texts['partial'].update({
@@ -253,7 +250,7 @@ move['partial'].update({'book':(5,1),'expired':(6,1),'settle':(7,1),'keep':(6,2)
                         'equal_expired':(4,0),'equal_finish':(5,0),'equal_wait':(4,2)})
 
 notes['normal'].append('完成条件：权益过期时间 ≤ 当前收入登记时间时，设置完成分摊并进入流程七；剩余合同负债为0不再作为独立的完成分摊条件。')
-notes['partial'].append('完成条件：两条部分退款处理分支均按权益过期时间 ≤ 当前收入登记时间判断是否到期；到期后设置完成分摊并进入流程七，未到期保持分摊中。剩余合同负债为0不再单独触发完成分摊。')
+notes['partial'].append('收尾条件：退款后剩余收入等于已确认收入的分支，更新金额后判断权益过期时间 ≤ 当前收入登记时间；满足时设置完成分摊并进入流程七，否则保持分摊中，不再以剩余合同负债为0作为完成条件。退款处理中的「权益状态为已过期（退款）」判断保持不变；流程七仍校验完成分摊后的剩余合同负债是否为0。')
 for page_id in ('normal','sameday','fullrefund','partial','reversal'):
     for node_id,text in texts[page_id].items():
         text=text.replace('执行分摊明细校验','进入「数据校验与分摊状态」流程')
@@ -294,6 +291,8 @@ for p in pages:
         row,col=move.get(p.id,{}).get(node['id'],(row,col))
         node['text']=add_flow_reference_numbers(texts[p.id][node['id']])
         node['w'],node['h']=(540,240) if node['kind']=='decision' else ((500,100) if node['kind']=='terminal' else (600,280))
+        if p.id=='partial' and node['id']=='calc':
+            node['h']=320  # Two separate formulas, with breaks only at operators.
         node['x']=70+800*col+(600-node['w'])/2
         node['y']=260+420*row-node['h']/2
         if node['id'] in FORMULAS.get(p.id,{}):
