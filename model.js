@@ -133,14 +133,14 @@ const FinanceModel = (() => {
  orders.unshift({...orders[4],id:36,order:'P-HK-179151346491398432',platform:'GPA.3371-2089-6241-12036',paid:Date.UTC(2026,9,28,16,47),refund:null,refunds:[],failure:{date:'2026-10-30',step:'生成每日分摊分录',reason:'每日分摊分录生成失败，待人工补录',attempts:3,persistent:true}});
  function updateAmounts(o,values){
   if(o.provider==='Apple'&&values.reportMatched===false){
-   if(!Number.isSafeInteger(values.netIncome))throw Error('请输入有效净收入，最多保留 3 位小数');
+   if(!Number.isSafeInteger(values.netIncome))throw Error('请输入有效净利润，最多保留 3 位小数');
    const basis=values.netIncome+(o.status==='已退款'?(netRefund(o)??0):0);
    Object.assign(o,{reportMatched:false,editedNetIncome:values.netIncome,incomeBasis:basis,commission:Math.max(0,(o.userPaid??o.price+o.tax)-o.tax-basis)});
    if(o.stage==='waiting')o.stage='queued';
    return;
   }
   const keys=o.provider==='Google'?['userPaid','tax','refundAmount','refundTax','netIncome']:['userPaid','refundAmount','netIncome','netRefund'];
-  for(const key of keys){if(!Number.isSafeInteger(values[key]))throw Error('请输入有效金额，最多保留 3 位小数');if(key!=='netIncome'&&values[key]<0)throw Error('除净收入外，其他金额不能为负数');}
+  for(const key of keys){if(!Number.isSafeInteger(values[key]))throw Error('请输入有效金额，最多保留 3 位小数');if(key!=='netIncome'&&values[key]<0)throw Error('除净利润外，其他金额不能为负数');}
   if(o.provider==='Google'&&(values.tax>values.userPaid||values.refundTax>values.refundAmount))throw Error('税费不能大于对应支付或退款金额');
   if(values.refundAmount>values.userPaid)throw Error('退款金额不能大于用户支付金额');
   if(values.refundAmount>0&&!o.refund)throw Error('该订单暂无退款时间，不能新增退款金额');
