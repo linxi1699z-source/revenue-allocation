@@ -120,7 +120,7 @@ def configure(pages, texts, meta, notes, move, formulas):
             text=success
             if page=='sameday' and node=='finish':text+='\n分摊明细统计时间为首次收入登记时间'
             if page=='fullrefund':text+='\n分摊明细统计时间为退款登记时间'
-            if page=='sameday' and node=='zeroaction':text+='\n净收入为0，无需金额分摊明细'
+            if page=='sameday' and node=='zeroaction':text+='\n净利润为0，无需金额分摊明细'
             texts[page][node]=text
     for page,nodes in {
         'sameday':['posA','negative','consume'],
