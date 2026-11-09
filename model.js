@@ -132,7 +132,17 @@ const FinanceModel = (() => {
  // First-page standard order that demonstrates the abnormal-allocation repair flow.
  orders.unshift({...orders[4],id:36,order:'P-HK-179151346491398432',platform:'GPA.3371-2089-6241-12036',paid:Date.UTC(2026,9,28,16,47),refund:null,refunds:[],failure:{date:'2026-10-30',step:'生成每日分摊分录',reason:'每日分摊分录生成失败，待人工补录',attempts:3,persistent:true}});
  const sites=['中国大陆','美区','英区'];
- for(const o of orders)o.site=sites[o.id%sites.length];
+ // Keep the existing scenario orders intact. These additional, recent orders make
+ // both pending income variants and an active allocation visible in every site.
+ const statusSamples=[];
+ for(const [siteIndex,site] of sites.entries()){
+  for(const [variant,baseId,day,stage] of [[0,0,6,'waiting'],[1,1,5,'queued'],[2,2,30,'active']]){
+   const id=37+siteIndex*3+variant,base=orders.find(o=>o.id===baseId);
+   statusSamples.push({...base,id,site,order:`P-HK-${179151346491400000n+BigInt(id*137)}`,platform:base.provider==='Apple'?String(2000001248200000n+BigInt(id*317)):`GPA.3371-2089-6241-${13000+id}`,paid:Date.UTC(2026,day===30?9:10,day,16,47),refund:null,refunds:[],status:'已支付',discountType:'标准',days:30,stage,allocationAsOf:stage==='active'?dayEndTimestamp('2026-11-07'):undefined});
+  }
+ }
+ orders.splice(1,0,...statusSamples);
+ for(const o of orders)o.site??=sites[o.id%sites.length];
  function updateAmounts(o,values){
   if(o.provider==='Apple'&&values.reportMatched===false){
    if(!Number.isSafeInteger(values.netIncome))throw Error('请输入有效净利润，请按币种精度输入');
