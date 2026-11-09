@@ -8,6 +8,7 @@ from revenue_formula_styles import FORMULAS, draw_formula, draw_formula_conditio
 from revenue_reversal_flow import configure as configure_reversal
 from revenue_flowchart_terms import apply_wording
 from revenue_validation_flow import configure as configure_validation
+from revenue_amount_precision import AMOUNT_PRECISION_FOOT, AMOUNT_PRECISION_NOTE
 
 # Reuse the existing chart definitions and renderer without running its old export.
 source = Path(__file__).with_name('build_revenue_flowcharts.py').read_text()
@@ -63,7 +64,7 @@ texts = {
 'future': '暂不确认主营业务收入\n保留已登记的平台应收账款与合同负债\n等待权益生效后继续收入分摊',
 'firstR': '尚不存在主营业务收入分摊记录？',
 'expired': '权益过期时间\n≤ 当前收入登记时间？',
-'firstvalue': '计算首次确认的主营业务收入\n主营业务收入金额＝\n（首次收入登记时间－权益生效时间）\n× 每日预估收入\n金额四舍五入，保留三位小数',
+'firstvalue': '计算首次确认的主营业务收入\n主营业务收入金额＝\n（首次收入登记时间－权益生效时间）\n× 每日预估收入\n'+AMOUNT_PRECISION_FOOT,
 'tail': '按到期公式计算本次主营业务收入\n主营业务收入＝平台应收账款借记总和\n－平台应收账款贷记总和\n－（已分摊主营业务收入贷记总和\n－已分摊主营业务收入借记总和）',
 'daily': '权益过期时间 > 收入登记时间\n本次主营业务收入＝每日预估收入',
 'recognize': '增加主营业务收入与合同负债分摊记录\n贷记：主营业务收入，金额为以上公式计算金额\n借记：合同负债，金额为以上公式计算金额\n分摊明细统计时间取收入分摊截止时间',
@@ -119,7 +120,7 @@ texts = {
 'equalbook': '冲销剩余合同负债\n贷记：平台应收账款，金额为本笔净退款额\n借记：合同负债，金额为剩余合同负债\n借记：主营业务收入，金额为 0\n明细统计时间为退款登记时间',
 'ratio': '计算已履约比例\n已履约比例＝已确认收入\n÷ 初始平台应收账款 × 100%\n比例保留两位小数',
 'equalend': '更新已确认收入与剩余合同负债\n剩余合同负债为0时，完成分摊\n执行分摊明细校验',
-'calc': '计算需要退回的金额\n已确认收入退回金额＝已确认收入\n－退款后剩余收入 × 已履约比例\n合同负债退回金额＝剩余合同负债\n－退款后剩余收入 ×（1－已履约比例）\n两项金额均四舍五入，保留三位小数',
+'calc': '计算需要退回的金额\n已确认收入退回金额＝已确认收入\n－退款后剩余收入 × 已履约比例\n合同负债退回金额＝剩余合同负债\n－退款后剩余收入 ×（1－已履约比例）\n'+AMOUNT_PRECISION_FOOT,
 'book': '生成本笔退款分摊明细\n贷记：平台应收账款，金额为本笔净退款额\n借记：主营业务收入，金额为已确认收入退回金额\n借记：合同负债，金额为合同负债退回金额\n明细统计时间为退款登记时间',
 'refresh': '更新已确认收入与剩余合同负债\n检查本次借记总额与贷记总额是否相等\n继续检查权益是否已结束',
 'expired': '权益状态为「已过期（退款）」？',
@@ -167,7 +168,7 @@ notes = {
 '首次收入登记时间：仅判断收入分摊截止时间减支付成功时间是否大于15天。大于15天时，取本次收入分摊截止时间；否则取支付成功时间对应日期的日末。',
 '特殊订单规则：谷歌被降级旧订单继续分摊，并使用降级后新订单的权益过期时间；苹果退款撤销订单从首次分摊重新开始，状态改为待分摊；升级后新订单正常分摊，苹果被升级旧订单存在退款时间时按退款流程处理。'],
 'normal': [
-'每日分摊规则：首次收入登记时间与收入分摊截止时间不是同一天时，补充每一天的收入与合同负债明细，最多补充至权益过期日期。本次分摊明细统计时间为收入分摊截止时间。金额四舍五入保留三位小数，展示时省略末尾的0。',
+'每日分摊规则：首次收入登记时间与收入分摊截止时间不是同一天时，补充每一天的收入与合同负债明细，最多补充至权益过期日期。本次分摊明细统计时间为收入分摊截止时间。金额精度按统一币种规则处理。',
 '公式说明：到期主营业务收入＝平台应收账款借记总和－平台应收账款贷记总和－（已分摊主营业务收入贷记总和－已分摊主营业务收入借记总和）。例如平台应收账款借记100、贷记0，已分摊主营业务收入贷记90、借记0时，本次确认金额为100－0－（90－0）＝10。',
 '首次确认边界需明确：首次收入登记时间早于权益生效时间、或晚于权益过期时间时，原文未写明截断方法。本图按照用户说明，在权益生效后才确认主营业务收入。'],
 'sameday': [
@@ -177,7 +178,7 @@ notes = {
 '本笔退款明细使用退款登记时间统计。谷歌订单存在多笔退款时，按退款日期逐笔处理；每笔处理后更新已确认收入与剩余合同负债，再处理下一笔。',
 '原文待确认：已完成分摊后全额退款的原文，只规定按已确认收入冲回主营业务收入与平台应收账款，未覆盖净利润小于0产生销售费用、或先前多笔部分退款导致的金额差异。'],
 'partial': [
-'已确认退款公式：已确认收入退回金额＝已确认收入－退款后剩余收入 × 已履约比例；合同负债退回金额＝剩余合同负债－退款后剩余收入 ×（1－已履约比例）。两项金额均四舍五入，保留三位小数。例如已确认收入20、剩余合同负债80、退款后剩余收入90、已履约比例20%时，两项退回金额分别为2和8。',
+'已确认退款公式：已确认收入退回金额＝已确认收入－退款后剩余收入 × 已履约比例；合同负债退回金额＝剩余合同负债－退款后剩余收入 ×（1－已履约比例）。两项金额均按统一币种精度四舍五入。例如已确认收入20、剩余合同负债80、退款后剩余收入90、已履约比例20%时，默认币种两项退回金额分别为2.00和8.00，日元 JPY 分别为2和8。',
 '部分退款后仍可使用权益时，按原文以净利润除以权益总时长计算新的每日预估收入。多笔退款需要明确每笔净利润的对应时点，以及新预估收入从哪一天开始应用。'],
 'checks': DATA_VALIDATION_NOTES,
 }
@@ -282,7 +283,7 @@ for p in pages:
     p.title,p.subtitle,p.source=meta[p.id]
     ordinal,name=p.title.split('、',1)
     p.title=ordinal+'、「'+name+'」'
-    p.notes=notes[p.id]
+    p.notes=[AMOUNT_PRECISION_NOTE]+notes[p.id]
     if p.id!='checks':
         p.notes=p.notes+DATA_VALIDATION_NOTES
     p.badges={}
@@ -308,7 +309,7 @@ for p in pages:
     # No letter abbreviations, formula variables, coded references, or the old account term.
     visible=[p.title,p.subtitle,p.source]+p.notes+[n['text'] for n in p.nodes.values()]
     for text in visible:
-        assert not re.search('[A-Za-z]',text.replace('平台订单 ID','平台订单编号')),(p.id,text)
+        assert not re.search('[A-Za-z]',text.replace('平台订单 ID','平台订单编号').replace('日元 JPY','日元')),(p.id,text)
         # Preserve the user's latest exact wording for this two-record gate.
         assert '平台应收款' not in text or (p.id=='fullrefund' and text==texts['fullrefund']['Aexists']),(p.id,text)
 
