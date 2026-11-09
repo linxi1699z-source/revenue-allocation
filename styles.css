@@ -98,3 +98,5 @@
 .manual-entry label+label{margin-top:12px}
 .manual-entry select,.manual-entry .manual-amount{width:100%}
 .manual-add-entry{margin-top:12px;border-style:dashed;border-color:#91baff;color:#1677ff;width:100%;background:#fff}
+
+.header-controls{display:flex;align-items:center;gap:18px}.header-controls label{display:flex;flex-direction:row;align-items:center;gap:8px;margin:0;white-space:nowrap}.header-controls .site-field select{width:132px}.header-controls .timezone-field select{width:208px}

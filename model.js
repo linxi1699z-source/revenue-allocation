@@ -131,16 +131,18 @@ const FinanceModel = (() => {
  }
  // First-page standard order that demonstrates the abnormal-allocation repair flow.
  orders.unshift({...orders[4],id:36,order:'P-HK-179151346491398432',platform:'GPA.3371-2089-6241-12036',paid:Date.UTC(2026,9,28,16,47),refund:null,refunds:[],failure:{date:'2026-10-30',step:'生成每日分摊分录',reason:'每日分摊分录生成失败，待人工补录',attempts:3,persistent:true}});
+ const sites=['中国大陆','美区','英区'];
+ for(const o of orders)o.site=sites[o.id%sites.length];
  function updateAmounts(o,values){
   if(o.provider==='Apple'&&values.reportMatched===false){
-   if(!Number.isSafeInteger(values.netIncome))throw Error('请输入有效净利润，最多保留 3 位小数');
+   if(!Number.isSafeInteger(values.netIncome))throw Error('请输入有效净利润，请按币种精度输入');
    const basis=values.netIncome+(o.status==='已退款'?(netRefund(o)??0):0);
    Object.assign(o,{reportMatched:false,editedNetIncome:values.netIncome,incomeBasis:basis,commission:Math.max(0,(o.userPaid??o.price+o.tax)-o.tax-basis)});
    if(o.stage==='waiting')o.stage='queued';
    return;
   }
   const keys=o.provider==='Google'?['userPaid','tax','refundAmount','refundTax','netIncome']:['userPaid','refundAmount','netIncome','netRefund'];
-  for(const key of keys){if(!Number.isSafeInteger(values[key]))throw Error('请输入有效金额，最多保留 3 位小数');if(key!=='netIncome'&&values[key]<0)throw Error('除净利润外，其他金额不能为负数');}
+  for(const key of keys){if(!Number.isSafeInteger(values[key]))throw Error('请输入有效金额，请按币种精度输入');if(key!=='netIncome'&&values[key]<0)throw Error('除净利润外，其他金额不能为负数');}
   if(o.provider==='Google'&&(values.tax>values.userPaid||values.refundTax>values.refundAmount))throw Error('税费不能大于对应支付或退款金额');
   if(values.refundAmount>values.userPaid)throw Error('退款金额不能大于用户支付金额');
   if(values.refundAmount>0&&!o.refund)throw Error('该订单暂无退款时间，不能新增退款金额');
@@ -183,7 +185,7 @@ const FinanceModel = (() => {
   const selected=new Set(),changes=[];
   for(const {selection,direction,cents} of edits){
    if(!['借记','贷记'].includes(direction))throw Error('请选择借贷方向');
-   if(!Number.isSafeInteger(cents)||cents<0)throw Error('金额须为非负数，最多保留 3 位小数');
+   if(!Number.isSafeInteger(cents)||cents<0)throw Error('金额须为非负数，请按币种精度输入');
    const monthlySelection=selection?.tab==='monthly';
    const previous=monthlySelection
     ?monthlyRows.find(r=>r.date===selection.date&&r.account===selection.account)
@@ -234,7 +236,7 @@ const FinanceModel = (() => {
   for(const entry of entries){
    if(!['平台应收账款','合同负债','主营业务收入','销售费用'].includes(entry.account))throw Error('请选择会计科目');
    if(!['借记','贷记'].includes(entry.direction))throw Error('请选择借贷方向');
-   if(!Number.isSafeInteger(entry.cents)||entry.cents<0)throw Error('请输入非负金额，最多保留 3 位小数');
+   if(!Number.isSafeInteger(entry.cents)||entry.cents<0)throw Error('请输入非负金额，请按币种精度输入');
    if(entry.direction==='借记')debit+=entry.cents;else credit+=entry.cents;
   }
   if(!entries.some(entry=>entry.account==='平台应收账款'))throw Error('必须设置平台应收账款记录。');
@@ -333,6 +335,6 @@ const FinanceModel = (() => {
  function latestAllocationTimestamp(o){const rows=ledger(o);return rows.length?rows[rows.length-1].timestamp:null;}
  function latestAllocationTime(o,zone=PACIFIC){return formatTime(latestAllocationTimestamp(o),zone);}
 
- return {orders,countries,completeAllocation,addManualRecords,canAddManualRecords,deleteManualRecord,editLedger,editLedgerGroup,resetEligibility,resetAllocation,updateAmounts,incomeBasis,ledger,monthly,balances,netIncome,netRefund,asOf,eligible,allocationStatuses,allocationStatus,anomalyRemark,entitlementExpiry,reconciliation,retry,firstAllocationTimestamp,latestAllocationTime,latestAllocationTimestamp,formatTime,dateInZone,dayEndTimestamp,incomeCutoffDate,pendingIncome,pendingRefunds,pendingRefundEntries};
+ return {orders,sites,countries,completeAllocation,addManualRecords,canAddManualRecords,deleteManualRecord,editLedger,editLedgerGroup,resetEligibility,resetAllocation,updateAmounts,incomeBasis,ledger,monthly,balances,netIncome,netRefund,asOf,eligible,allocationStatuses,allocationStatus,anomalyRemark,entitlementExpiry,reconciliation,retry,firstAllocationTimestamp,latestAllocationTime,latestAllocationTimestamp,formatTime,dateInZone,dayEndTimestamp,incomeCutoffDate,pendingIncome,pendingRefunds,pendingRefundEntries};
 })();
 if(typeof module!=='undefined')module.exports=FinanceModel;

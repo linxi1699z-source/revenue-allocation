@@ -1,5 +1,17 @@
-const $=s=>document.querySelector(s), money=n=>n===null?'<span class="pending-amount">待匹配</span>':(n/1000).toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:3});
-const state={filtered:[...FinanceModel.orders],page:1,size:10,detailPage:1,detailSize:10,tab:'daily',order:null,timezone:'America/Los_Angeles',pendingOrder:null,ledgerFilters:{daily:{},monthly:{}}};
+const $=s=>document.querySelector(s);
+const amountText=(n,currency,grouping=true)=>{
+ if(n===null||n===undefined)return '待匹配';
+ const yen=currency==='JPY',unit=yen?1000:10,places=yen?0:2;
+ const rounded=Math.sign(n)*Math.round(Math.abs(n)/unit)/(yen?1:100);
+ return rounded.toLocaleString('en-US',{minimumFractionDigits:places,maximumFractionDigits:places,useGrouping:grouping});
+};
+const money=(n,currency)=>n===null||n===undefined?'<span class="pending-amount">待匹配</span>':amountText(n,currency);
+const amountPattern=(currency,negative=false)=>new RegExp(`^${negative?'-?':''}\\d+${currency==='JPY'?'':'(?:\\.\\d{1,2})?'}$`);
+const amountRule=currency=>currency==='JPY'?'日元金额只能输入整数':'金额最多保留 2 位小数';
+const savedSite=sessionStorage.getItem('revenue-site');
+const state={filtered:[],site:FinanceModel.sites.includes(savedSite)?savedSite:'中国大陆',page:1,size:10,detailPage:1,detailSize:10,tab:'daily',order:null,timezone:'America/Los_Angeles',pendingOrder:null,ledgerFilters:{daily:{},monthly:{}}};
+$('#data-site').value=state.site;
+PaymentPage.setSite(state.site);
 $('#allocation-cutoff').textContent=`收入分摊截止时间：${FinanceModel.incomeCutoffDate()} 23:59:59（太平洋时间）`;
 const time=n=>n===null||n===undefined?'—':`<span class="timezone-value">${FinanceModel.formatTime(n,state.timezone).slice(0,16)}</span>`;
 const allocationDate=(o,first=false)=>{const timestamp=first?FinanceModel.firstAllocationTimestamp(o):FinanceModel.latestAllocationTimestamp(o);return timestamp===null?'—':`<span class="timezone-value">${FinanceModel.formatTime(timestamp,state.timezone).slice(0,16)}</span>`;};
@@ -15,6 +27,17 @@ $('#timezone').onchange=e=>{
  document.body.classList.add('timezone-updated');
  timezoneFeedbackTimer=setTimeout(()=>{document.body.classList.remove('timezone-updated');notice.hidden=true;},3200);
 };
+$('#data-site').onchange=e=>{
+ if(state.site===e.target.value)return;
+ state.site=e.target.value;
+ sessionStorage.setItem('revenue-site',state.site);
+ state.page=state.detailPage=1;
+ $('#export-history').hidden=true;
+ if($('#pending-dialog').open)$('#pending-dialog').close();
+ PaymentPage.setSite(state.site);
+ $('#search-form').requestSubmit();
+ if(location.hash.startsWith('#detail/'))location.hash='income';
+};
 for(const id of ['user-country','account-country']){const box=$('#'+id);box.innerHTML=`<button type="button" class="multi-select-toggle" aria-expanded="false" aria-label="${id==='user-country'?'用户国家':'应用商店账号国家'}">请选择</button><div class="multi-select-menu">${FinanceModel.countries.map(c=>`<label class="multi-option"><input type="checkbox" value="${c}">${c}</label>`).join('')}</div>`;box.querySelector('button').onclick=()=>{const open=!box.classList.contains('open');document.querySelectorAll('.multi-select').forEach(b=>{b.classList.remove('open');b.querySelector('button').setAttribute('aria-expanded','false');});box.classList.toggle('open',open);box.querySelector('button').setAttribute('aria-expanded',String(open));};}
 document.addEventListener('click',e=>{if(!e.target.closest('.multi-select'))document.querySelectorAll('.multi-select').forEach(b=>{b.classList.remove('open');b.querySelector('button').setAttribute('aria-expanded','false');});});
 $('.finance').onclick=()=>{const hidden=!$('#finance-nav').hidden;$('#finance-nav').hidden=hidden;$('.finance').setAttribute('aria-expanded',String(!hidden));};
@@ -24,8 +47,8 @@ const headers=['支付订单ID','平台订单ID','产品ID','支付服务商','�
 $('#order-head').innerHTML='<tr>'+headers.map((h,i)=>`<th class="${i>=7&&i<=18?'money':''}">${h}</th>`).join('')+'</tr>';
 const badge=o=>`<span class="status ${o.status==='已退款'?'refunded':o.status==='退款撤销'?'revoked':''}">${o.status}</span>`;
 function paginate(id,total,detail=false){const pageKey=detail?'detailPage':'page',sizeKey=detail?'detailSize':'size',pages=Math.max(1,Math.ceil(total/state[sizeKey]));state[pageKey]=Math.min(state[pageKey],pages);const page=state[pageKey],visible=[...new Set([1,page-1,page,page+1,pages])].filter(n=>n>0&&n<=pages).sort((a,b)=>a-b);let last=0;$('#'+id).innerHTML=`<span>共 ${total} 条</span><select aria-label="${detail?'明细':'列表'}每页条数">${[10,20,50].map(n=>`<option value="${n}" ${state[sizeKey]===n?'selected':''}>${n} 条/页</option>`).join('')}</select><button data-page="${page-1}" aria-label="上一页" ${page===1?'disabled':''}>‹</button>`+visible.map(n=>{const gap=last&&n-last>1?' <span>•••</span> ':'';last=n;return gap+`<button data-page="${n}" class="${n===page?'current':''}" ${n===page?'aria-current="page"':''}>${n}</button>`;}).join('')+`<button data-page="${page+1}" aria-label="下一页" ${page===pages?'disabled':''}>›</button><span>跳至</span><input type="number" min="1" max="${pages}" value="${page}" aria-label="跳转页码"><span>页</span><button class="jump">确定</button>`;const el=$('#'+id),render=detail?renderDetail:renderList;el.querySelectorAll('[data-page]').forEach(b=>b.onclick=()=>{state[pageKey]=Number(b.dataset.page);render();});el.querySelector('select').onchange=e=>{state[sizeKey]=Number(e.target.value);state[pageKey]=1;render();};const jump=()=>{const n=Number(el.querySelector('input').value);if(Number.isInteger(n)&&n>=1&&n<=pages){state[pageKey]=n;render();}else el.querySelector('input').reportValidity();};el.querySelector('.jump').onclick=jump;el.querySelector('input').onkeydown=e=>{if(e.key==='Enter')jump();};}
-function renderList(){paginate('list-pagination',state.filtered.length);const rows=state.filtered.slice((state.page-1)*state.size,state.page*state.size);$('#order-body').innerHTML=rows.map(o=>{const b=FinanceModel.balances(o);const cells=[o.order,o.platform,o.product,`<span class="provider ${o.provider.toLowerCase()}"><i>${o.provider[0]}</i>${o.provider}</span>`,badge(o),allocationBadge(o,true),o.currency,... [o.price,o.userPaid??o.price+o.tax,o.tax,(o.userPaid??o.price+o.tax)-o.tax,o.commission,o.refund?(o.refundAmount??o.price+o.tax):0,o.refund?(o.refundTax??o.tax):0,FinanceModel.netRefund(o),FinanceModel.netIncome(o),b.revenue,b.liability,b.financialExpenses].map(v=>money(v)),o.country,o.account,o.discountType,allocationDate(o,true),allocationDate(o),time(o.paid),time(o.refund),FinanceModel.anomalyRemark(o)||'—',`<a class="order-action" href="#detail/${o.id}">分摊明细</a>`];return '<tr>'+cells.map((c,i)=>`<td ${i<3?`title="${String(c).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;')}"`:''} class="${i>=7&&i<=18?'money':i<3?'order-id':''}">${c}</td>`).join('')+'</tr>';}).join('')||'<tr><td colspan="28" class="empty-cell">暂无符合条件的订单，请调整筛选条件或重置</td></tr>';}
-$('#search-form').onsubmit=e=>{e.preventDefault();const f=new FormData(e.target),get=k=>String(f.get(k)||'').trim();for(const prefix of ['pay','refund'])if(get(prefix+'Start')&&get(prefix+'End')&&get(prefix+'Start')>get(prefix+'End')){$('#search-error').textContent=(prefix==='pay'?'支付':'退款')+'开始日期不能晚于结束日期';return;}$('#search-error').textContent='';const selected=id=>[...document.querySelectorAll('#'+id+' input:checked')].map(i=>i.value),uc=selected('user-country'),ac=selected('account-country');const inRange=(n,prefix)=>{const s=get(prefix+'Start'),end=get(prefix+'End');if(!s&&!end)return true;if(!n)return false;const date=FinanceModel.dateInZone(n,state.timezone);return (!s||date>=s)&&(!end||date<=end);};state.filtered=FinanceModel.orders.filter(o=>FinanceModel.eligible(o)&&(!get('allocationStatus')||FinanceModel.allocationStatus(o)===get('allocationStatus'))&&o.order.toLowerCase().includes(get('order').toLowerCase())&&o.platform.toLowerCase().includes(get('platform').toLowerCase())&&o.product.toLowerCase().includes(get('product').toLowerCase())&&(!get('status')||o.status===get('status'))&&(!get('provider')||o.provider===get('provider'))&&(!get('discountType')||o.discountType===get('discountType'))&&(!uc.length||uc.includes(o.country))&&(!ac.length||ac.includes(o.account))&&inRange(o.paid,'pay')&&inRange(o.refund,'refund'));state.page=1;renderList();};
+function renderList(){paginate('list-pagination',state.filtered.length);const rows=state.filtered.slice((state.page-1)*state.size,state.page*state.size);$('#order-body').innerHTML=rows.map(o=>{const b=FinanceModel.balances(o);const cells=[o.order,o.platform,o.product,`<span class="provider ${o.provider.toLowerCase()}"><i>${o.provider[0]}</i>${o.provider}</span>`,badge(o),allocationBadge(o,true),o.currency,... [o.price,o.userPaid??o.price+o.tax,o.tax,(o.userPaid??o.price+o.tax)-o.tax,o.commission,o.refund?(o.refundAmount??o.price+o.tax):0,o.refund?(o.refundTax??o.tax):0,FinanceModel.netRefund(o),FinanceModel.netIncome(o),b.revenue,b.liability,b.financialExpenses].map(v=>money(v,o.currency)),o.country,o.account,o.discountType,allocationDate(o,true),allocationDate(o),time(o.paid),time(o.refund),FinanceModel.anomalyRemark(o)||'—',`<a class="order-action" href="#detail/${o.id}">分摊明细</a>`];return '<tr>'+cells.map((c,i)=>`<td ${i<3?`title="${String(c).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;')}"`:''} class="${i>=7&&i<=18?'money':i<3?'order-id':''}">${c}</td>`).join('')+'</tr>';}).join('')||'<tr><td colspan="28" class="empty-cell">暂无符合条件的订单，请调整筛选条件或重置</td></tr>';}
+$('#search-form').onsubmit=e=>{e.preventDefault();const f=new FormData(e.target),get=k=>String(f.get(k)||'').trim();for(const prefix of ['pay','refund'])if(get(prefix+'Start')&&get(prefix+'End')&&get(prefix+'Start')>get(prefix+'End')){$('#search-error').textContent=(prefix==='pay'?'支付':'退款')+'开始日期不能晚于结束日期';return;}$('#search-error').textContent='';const selected=id=>[...document.querySelectorAll('#'+id+' input:checked')].map(i=>i.value),uc=selected('user-country'),ac=selected('account-country');const inRange=(n,prefix)=>{const s=get(prefix+'Start'),end=get(prefix+'End');if(!s&&!end)return true;if(!n)return false;const date=FinanceModel.dateInZone(n,state.timezone);return (!s||date>=s)&&(!end||date<=end);};state.filtered=FinanceModel.orders.filter(o=>o.site===state.site&&FinanceModel.eligible(o)&&(!get('allocationStatus')||FinanceModel.allocationStatus(o)===get('allocationStatus'))&&o.order.toLowerCase().includes(get('order').toLowerCase())&&o.platform.toLowerCase().includes(get('platform').toLowerCase())&&o.product.toLowerCase().includes(get('product').toLowerCase())&&(!get('status')||o.status===get('status'))&&(!get('provider')||o.provider===get('provider'))&&(!get('discountType')||o.discountType===get('discountType'))&&(!uc.length||uc.includes(o.country))&&(!ac.length||ac.includes(o.account))&&inRange(o.paid,'pay')&&inRange(o.refund,'refund'));state.page=1;renderList();};
 function setDefaultPaymentDates(){
  const current=FinanceModel.dateInZone(Date.now(),state.timezone),[year,month]=current.split('-').map(Number),start=new Date(year,month-2,1);
  const dateValue=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
@@ -33,24 +56,24 @@ function setDefaultPaymentDates(){
  $('#search-form').elements.payEnd.value=current;
  syncRangeLabels();
 }
-$('#search-form').onreset=()=>{setTimeout(()=>{$('#search-error').textContent='';state.filtered=[...FinanceModel.orders];state.page=1;document.querySelectorAll('.multi-select').forEach(b=>b.classList.remove('open'));document.querySelectorAll('.multi-select input').forEach(i=>i.dispatchEvent(new Event('change',{bubbles:true})));setDefaultPaymentDates();$('#search-form').requestSubmit();});};
-function renderDetail(){const o=state.order;if(!o)return;const b=FinanceModel.allocationStatus(o)==='待分摊'?{receivable:0,liability:0,revenue:0}:FinanceModel.balances(o);const noAllocationActions=['免费试用','赠送'].includes(o.discountType);$('#ledger-add').hidden=!FinanceModel.canAddManualRecords(o);$('#ledger-complete').hidden=noAllocationActions;$('#ledger-complete').disabled=FinanceModel.allocationStatus(o)==='完成分摊';$('#detail-summary').innerHTML=`<h2>${o.order} ${allocationBadge(o)} ${badge(o)}</h2><div class="summary-grid">${[['平台订单ID',o.platform],['产品ID',o.product],['支付服务商',o.provider],['币种',o.currency],['支付时间',time(o.paid)],['净利润',money(FinanceModel.netIncome(o))],['平台应收账款',money(b.receivable)],['合同负债',money(b.liability)],['已确认收入',money(b.revenue)]].map(([t,v])=>`<div class="summary-item"><span>${t}${['平台应收账款','合同负债','已确认收入'].includes(t)?' <button type="button" class="info-icon" data-tooltip="每日执行分摊程序后更新。" aria-label="每日执行分摊程序后更新。">ⓘ</button>':''}</span><strong>${v}</strong></div>`).join('')}</div>`;let rows=FinanceModel.ledger(o).map((r,index)=>({...r,index}));if(state.tab==='monthly')rows=FinanceModel.monthly(rows);rows.sort((a,b)=>b.timestamp-a.timestamp);const filters=state.ledgerFilters[state.tab];rows=rows.filter(r=>{const local=FinanceModel.formatTime(r.timestamp,state.timezone).slice(0,10);return (!filters.start||local>=filters.start)&&(!filters.end||local<=filters.end)&&(!filters.account||r.account===filters.account)&&(!filters.direction||r.direction===filters.direction);});document.querySelectorAll('[data-ledger-filter]').forEach(button=>{const key=button.dataset.ledgerFilter;button.classList.toggle('filter-active',key==='date'?!!(filters.start||filters.end):!!filters[key]);});document.querySelectorAll('[data-tab]').forEach(t=>{t.classList.toggle('selected',t.dataset.tab===state.tab);t.setAttribute('aria-selected',String(t.dataset.tab===state.tab));});state.visibleLedger=rows;paginate('detail-pagination',rows.length,true);$('#ledger-body').innerHTML=rows.slice((state.detailPage-1)*state.detailSize,state.detailPage*state.detailSize).map((r,i)=>`<tr><td>${time(r.timestamp)}</td><td><span class="account-name">${r.account}</span>${state.tab==='daily'&&r.manual?' <span class="manual-tag">人工添加</span>':''}${r.event==='refund'?' <span class="refund-note">全额退款</span>':''}</td><td><span class="direction ${r.direction==='贷记'?'credit':''}">${r.direction}</span></td><td>${o.currency}</td><td class="money">${money(r.cents)}</td><td><button type="button" class="ledger-edit" data-ledger-edit="${(state.detailPage-1)*state.detailSize+i}" ${r.superseded||r.event==="edit-reversal"?"disabled":""}>编辑</button></td></tr>`).join('')||'<tr><td colspan="6" class="empty-cell">尚未生成分摊记录</td></tr>';}
+$('#search-form').onreset=()=>{setTimeout(()=>{$('#search-error').textContent='';state.filtered=FinanceModel.orders.filter(o=>o.site===state.site);state.page=1;document.querySelectorAll('.multi-select').forEach(b=>b.classList.remove('open'));document.querySelectorAll('.multi-select input').forEach(i=>i.dispatchEvent(new Event('change',{bubbles:true})));setDefaultPaymentDates();$('#search-form').requestSubmit();});};
+function renderDetail(){const o=state.order;if(!o)return;const b=FinanceModel.allocationStatus(o)==='待分摊'?{receivable:0,liability:0,revenue:0}:FinanceModel.balances(o);const noAllocationActions=['免费试用','赠送'].includes(o.discountType);$('#ledger-add').hidden=!FinanceModel.canAddManualRecords(o);$('#ledger-complete').hidden=noAllocationActions;$('#ledger-complete').disabled=FinanceModel.allocationStatus(o)==='完成分摊';$('#detail-summary').innerHTML=`<h2>${o.order} ${allocationBadge(o)} ${badge(o)}</h2><div class="summary-grid">${[['平台订单ID',o.platform],['产品ID',o.product],['支付服务商',o.provider],['币种',o.currency],['支付时间',time(o.paid)],['净利润',money(FinanceModel.netIncome(o),o.currency)],['平台应收账款',money(b.receivable,o.currency)],['合同负债',money(b.liability,o.currency)],['已确认收入',money(b.revenue,o.currency)]].map(([t,v])=>`<div class="summary-item"><span>${t}${['平台应收账款','合同负债','已确认收入'].includes(t)?' <button type="button" class="info-icon" data-tooltip="每日执行分摊程序后更新。" aria-label="每日执行分摊程序后更新。">ⓘ</button>':''}</span><strong>${v}</strong></div>`).join('')}</div>`;let rows=FinanceModel.ledger(o).map((r,index)=>({...r,index}));if(state.tab==='monthly')rows=FinanceModel.monthly(rows);rows.sort((a,b)=>b.timestamp-a.timestamp);const filters=state.ledgerFilters[state.tab];rows=rows.filter(r=>{const local=FinanceModel.formatTime(r.timestamp,state.timezone).slice(0,10);return (!filters.start||local>=filters.start)&&(!filters.end||local<=filters.end)&&(!filters.account||r.account===filters.account)&&(!filters.direction||r.direction===filters.direction);});document.querySelectorAll('[data-ledger-filter]').forEach(button=>{const key=button.dataset.ledgerFilter;button.classList.toggle('filter-active',key==='date'?!!(filters.start||filters.end):!!filters[key]);});document.querySelectorAll('[data-tab]').forEach(t=>{t.classList.toggle('selected',t.dataset.tab===state.tab);t.setAttribute('aria-selected',String(t.dataset.tab===state.tab));});state.visibleLedger=rows;paginate('detail-pagination',rows.length,true);$('#ledger-body').innerHTML=rows.slice((state.detailPage-1)*state.detailSize,state.detailPage*state.detailSize).map((r,i)=>`<tr><td>${time(r.timestamp)}</td><td><span class="account-name">${r.account}</span>${state.tab==='daily'&&r.manual?' <span class="manual-tag">人工添加</span>':''}${r.event==='refund'?' <span class="refund-note">全额退款</span>':''}</td><td><span class="direction ${r.direction==='贷记'?'credit':''}">${r.direction}</span></td><td>${o.currency}</td><td class="money">${money(r.cents,o.currency)}</td><td><button type="button" class="ledger-edit" data-ledger-edit="${(state.detailPage-1)*state.detailSize+i}" ${r.superseded||r.event==="edit-reversal"?"disabled":""}>编辑</button></td></tr>`).join('')||'<tr><td colspan="6" class="empty-cell">尚未生成分摊记录</td></tr>';}
 document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{state.tab=b.dataset.tab;state.detailPage=1;renderDetail();});$('#back').onclick=()=>location.hash='income';
 function renderPending(){
  const o=state.pendingOrder;if(!o)return;
  const income=FinanceModel.pendingIncome(o),refunds=FinanceModel.pendingRefunds(o);
- $('#pending-income-body').innerHTML=income.map(r=>`<tr><td>${r.order}</td><td>${r.platform}</td><td class="money">${money(r.cents)}${r.cents===null?'':' '+o.currency}</td><td>${time(r.timestamp)}</td></tr>`).join('')||'<tr><td colspan="4" class="pending-empty">暂无待分摊收入</td></tr>';
- $('#pending-refund-body').innerHTML=refunds.map(r=>`<tr><td>${r.order}</td><td>${r.platform}</td><td class="money">${money(r.cents)}${r.cents===null?'':' '+o.currency}</td><td><div class="refund-group-date">${r.date}（太平洋日期）</div>${r.timestamps.map(t=>`<div>${time(t)}</div>`).join('')}</td></tr>`).join('')||'<tr><td colspan="4" class="pending-empty">暂无待分摊退款</td></tr>';
+ $('#pending-income-body').innerHTML=income.map(r=>`<tr><td>${r.order}</td><td>${r.platform}</td><td class="money">${money(r.cents,o.currency)}${r.cents===null?'':' '+o.currency}</td><td>${time(r.timestamp)}</td></tr>`).join('')||'<tr><td colspan="4" class="pending-empty">暂无待分摊收入</td></tr>';
+ $('#pending-refund-body').innerHTML=refunds.map(r=>`<tr><td>${r.order}</td><td>${r.platform}</td><td class="money">${money(r.cents,o.currency)}${r.cents===null?'':' '+o.currency}</td><td><div class="refund-group-date">${r.date}（太平洋日期）</div>${r.timestamps.map(t=>`<div>${time(t)}</div>`).join('')}</td></tr>`).join('')||'<tr><td colspan="4" class="pending-empty">暂无待分摊退款</td></tr>';
 }
-$('#order-body').onclick=e=>{const edit=e.target.closest('[data-edit-id]');if(edit){openAmountEditor(Number(edit.dataset.editId));return;}const button=e.target.closest('[data-pending-id]');if(!button)return;const order=FinanceModel.orders.find(o=>o.id===Number(button.dataset.pendingId));if(!order||FinanceModel.allocationStatus(order)!=='待分摊')return;state.pendingOrder=order;renderPending();$('#pending-dialog').showModal();};
+$('#order-body').onclick=e=>{const edit=e.target.closest('[data-edit-id]');if(edit){openAmountEditor(Number(edit.dataset.editId));return;}const button=e.target.closest('[data-pending-id]');if(!button)return;const order=FinanceModel.orders.find(o=>o.id===Number(button.dataset.pendingId)&&o.site===state.site);if(!order||FinanceModel.allocationStatus(order)!=='待分摊')return;state.pendingOrder=order;renderPending();$('#pending-dialog').showModal();};
 $('#pending-close').onclick=$('#pending-done').onclick=()=>$('#pending-dialog').close();
 $('#pending-dialog').addEventListener('close',()=>{state.pendingOrder=null;});
 $('#pending-dialog').onclick=e=>{if(e.target===$('#pending-dialog')){const r=e.target.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)e.target.close();}};
 function route(){
  const hash=location.hash.slice(1),detail=hash.startsWith('detail/'),bills=hash==='bills',payment=hash==='orders';
- $('#payment-view').hidden=!payment;$('#payment-site').hidden=!payment;$('.timezone-field').hidden=payment;$('#payment-nav').classList.toggle('active',payment);$('#payment-center-label').classList.toggle('payment-active',payment);if(payment)PaymentPage.render();
+ $('#payment-view').hidden=!payment;$('.timezone-field').hidden=payment;$('#payment-nav').classList.toggle('active',payment);$('#payment-center-label').classList.toggle('payment-active',payment);if(payment)PaymentPage.render();
 
- if(detail){state.order=FinanceModel.orders.find(o=>o.id===Number(hash.split('/')[1]));if(!state.order){location.hash='income';return;}state.tab='daily';state.detailPage=1;renderDetail();}
+ if(detail){state.order=FinanceModel.orders.find(o=>o.id===Number(hash.split('/')[1])&&o.site===state.site);if(!state.order){location.hash='income';return;}state.tab='daily';state.detailPage=1;renderDetail();}
  else state.order=null;
  $('.page-heading').hidden=!bills;$('#list-view').hidden=detail||bills||payment;$('#detail-view').hidden=!detail;$('#bills-view').hidden=!bills;
  const title=bills?'账单汇总':detail?'分摊明细':'收入明细';
@@ -78,13 +101,13 @@ function exportZip(files){
  return new Blob([...parts,...central,end],{type:'application/zip'});
 }
 function incomeExportFiles(orders,start,end,zone){
- const amount=n=>n===null?'待匹配':String(Number((n/1000).toFixed(3))),stamp=n=>FinanceModel.formatTime(n,zone).slice(0,16),date=n=>n===null?'—':FinanceModel.formatTime(n,zone).slice(0,16);
+ const stamp=n=>FinanceModel.formatTime(n,zone).slice(0,16),date=n=>n===null?'—':FinanceModel.formatTime(n,zone).slice(0,16);
  const orderRows=[headers.slice(0,-1)],daily=[['支付订单ID','平台订单ID','统计时间','会计科目','借贷方向','币种','金额']],monthly=[['支付订单ID','平台订单ID','统计时间','会计科目','借贷方向','币种','金额']];
  for(const o of orders){
   const rows=FinanceModel.ledger(o).filter(r=>r.date>=start&&r.date<=end);if(!rows.length)continue;
   const b=FinanceModel.balances(o);
-  orderRows.push([o.order,o.platform,o.product,o.provider,o.status,FinanceModel.allocationStatus(o),o.currency,...[o.price,o.userPaid??o.price+o.tax,o.tax,(o.userPaid??o.price+o.tax)-o.tax,o.commission,o.refund?(o.refundAmount??o.price+o.tax):0,o.refund?(o.refundTax??o.tax):0,FinanceModel.netRefund(o),FinanceModel.netIncome(o),b.revenue,b.liability,b.financialExpenses].map(amount),o.country,o.account,o.discountType,date(FinanceModel.firstAllocationTimestamp(o)),date(FinanceModel.latestAllocationTimestamp(o)),stamp(o.paid),stamp(o.refund),FinanceModel.anomalyRemark(o)||'—']);
-  const record=r=>[o.order,o.platform,stamp(r.timestamp),r.account,r.direction,o.currency,amount(r.cents)];
+  orderRows.push([o.order,o.platform,o.product,o.provider,o.status,FinanceModel.allocationStatus(o),o.currency,...[o.price,o.userPaid??o.price+o.tax,o.tax,(o.userPaid??o.price+o.tax)-o.tax,o.commission,o.refund?(o.refundAmount??o.price+o.tax):0,o.refund?(o.refundTax??o.tax):0,FinanceModel.netRefund(o),FinanceModel.netIncome(o),b.revenue,b.liability,b.financialExpenses].map(n=>amountText(n,o.currency,false)),o.country,o.account,o.discountType,date(FinanceModel.firstAllocationTimestamp(o)),date(FinanceModel.latestAllocationTimestamp(o)),stamp(o.paid),stamp(o.refund),FinanceModel.anomalyRemark(o)||'—']);
+  const record=r=>[o.order,o.platform,stamp(r.timestamp),r.account,r.direction,o.currency,amountText(r.cents,o.currency,false)];
   daily.push(...rows.map(record));monthly.push(...FinanceModel.monthly(rows).map(record));
  }
  if(orderRows.length===1)return [];
@@ -99,7 +122,7 @@ function openExportDb(){return new Promise((resolve,reject)=>{const request=inde
 async function readExportJobs(){try{const db=await openExportDb();return await new Promise((resolve,reject)=>{const tx=db.transaction('jobs','readonly'),request=tx.objectStore('jobs').getAll();request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);tx.oncomplete=()=>db.close();});}catch{return [];}}
 async function saveExportJob(job){try{const db=await openExportDb();await new Promise((resolve,reject)=>{const tx=db.transaction('jobs','readwrite');tx.objectStore('jobs').put(job);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);});db.close();}catch{/* Keep the result available for this page session. */}}
 function recentExportJobs(){
- return exportJobs.slice().sort((a,b)=>b.createdAt-a.createdAt).slice(0,EXPORT_RECENT_COUNT);
+ return exportJobs.filter(job=>(job.site||'中国大陆')===state.site).sort((a,b)=>b.createdAt-a.createdAt).slice(0,EXPORT_RECENT_COUNT);
 }
 function renderExportHistory(){
  const jobs=recentExportJobs(),button=$('#export-open');
@@ -121,13 +144,13 @@ $('#export-form').onsubmit=async e=>{
  if(!start||!end){error.textContent='请选择导出时间范围';return;}
  if(start>end){error.textContent='开始日期不能晚于结束日期';return;}
  if((Date.parse(end+'T00:00:00Z')-Date.parse(start+'T00:00:00Z'))/86400000>365){error.textContent='最大时间段为 1 年。';return;}
- const orders=[...state.filtered],zone=state.timezone;
+ const orders=[...state.filtered],zone=state.timezone,site=state.site;
  $('#export-dialog').close();exportBusy=true;renderExportHistory();showExportToast('正在生成数据，请稍后查看导出结果并下载');
  try{
   await new Promise(resolve=>setTimeout(resolve,900));
   const files=incomeExportFiles(orders,start,end,zone);
   if(!files.length)throw Error('所选时间范围内暂无可导出的分摊数据');
-  const job={id:crypto.randomUUID(),name:`收入分摊_${start}_${end}.zip`,createdAt:Date.now(),blob:exportZip(files)};
+  const job={id:crypto.randomUUID(),site,name:`收入分摊_${site}_${start}_${end}.zip`,createdAt:Date.now(),blob:exportZip(files)};
   exportJobs.unshift(job);await saveExportJob(job);showExportToast('数据已生成，可点击导出按钮下载');
  }catch(err){showExportToast(err.message||'导出失败，请重试');}
  finally{exportBusy=false;renderExportHistory();}
@@ -138,9 +161,9 @@ const editableAmountFields=o=>o.provider==='Google'?[['userPaid','用户支付�
 function openAmountEditor(id){
  const o=FinanceModel.orders.find(order=>order.id===id);if(!o)return;amountOrder=o;
  $('#amount-form').reset();$('#amount-error').textContent='';
- $('#amount-meta').innerHTML=[['支付订单ID',o.order],['平台订单ID',o.platform],['产品 ID',o.product],['产品价格',money(o.price)],['币种',o.currency],['收入分摊截止时间',time(FinanceModel.latestAllocationTimestamp(o))]].map(([name,value])=>`<div class="summary-item"><span>${name}</span><strong>${value}</strong></div>`).join('');
+ $('#amount-meta').innerHTML=[['支付订单ID',o.order],['平台订单ID',o.platform],['产品 ID',o.product],['产品价格',money(o.price,o.currency)],['币种',o.currency],['收入分摊截止时间',time(FinanceModel.latestAllocationTimestamp(o))]].map(([name,value])=>`<div class="summary-item"><span>${name}</span><strong>${value}</strong></div>`).join('');
  const values={userPaid:o.userPaid??o.price+o.tax,tax:o.tax,refundAmount:o.refund?(o.refundAmount??o.price+o.tax):0,refundTax:o.refund?(o.refundTax??o.tax):0,netIncome:FinanceModel.netIncome(o),netRefund:FinanceModel.netRefund(o)};
- $('#amount-fields').innerHTML=editableAmountFields(o).map(([key,label])=>`<label>${label}<input name="${key}" inputmode="decimal" type="text" required value="${Number(((values[key]??0)/1000).toFixed(3))}" placeholder="请输入金额"></label>`).join('');
+ $('#amount-fields').innerHTML=editableAmountFields(o).map(([key,label])=>`<label>${label}<input name="${key}" inputmode="${o.currency==='JPY'?'numeric':'decimal'}" type="text" required value="${amountText(values[key]??0,o.currency,false)}" placeholder="请输入金额"></label>`).join('');
  $('#amount-apple-option').hidden=o.provider!=='Apple';$('#amount-form').elements.reportMatched.value=(o.reportMatched??!o.unmatchedOverThreeDays)?'yes':'no';syncAmountFields();const eligibility=FinanceModel.resetEligibility(o);$('#reset-eligibility').textContent=eligibility.allowed?'重置后原分摊记录将标记删除，已确认收入、合同负债、销售费用清零，等待重新分摊。':eligibility.reason;$('#amount-form').querySelector('[type=submit]').disabled=!eligibility.allowed;$('#amount-dialog').showModal();
 }
 for(const id of ['amount-close','amount-cancel'])$('#'+id).onclick=()=>$('#amount-dialog').close();
@@ -149,8 +172,8 @@ $('#amount-form').onsubmit=e=>{
  e.preventDefault();if(!amountOrder)return;const form=e.target,values={};
  for(const [key,label] of editableAmountFields(amountOrder).filter(([key])=>amountOrder.provider!=='Apple'||form.elements.reportMatched.value==='yes'||key==='netIncome')){
   const raw=form.elements[key].value.trim();
-  const valid=key==='netIncome'?/^-?\d+(?:\.\d{1,3})?$/.test(raw):/^\d+(?:\.\d{1,3})?$/.test(raw);
-  if(!valid){$('#amount-error').textContent=label+(key==='netIncome'?'请输入有效金额，最多保留 3 位小数':'请输入非负金额，最多保留 3 位小数');form.elements[key].focus();return;}
+  const valid=amountPattern(amountOrder.currency,key==='netIncome').test(raw);
+  if(!valid){$('#amount-error').textContent=label+'：'+amountRule(amountOrder.currency);form.elements[key].focus();return;}
   values[key]=Math.round(Number(raw)*1000);
  }
  values.reportMatched=form.elements.reportMatched.value==='yes';
@@ -192,7 +215,7 @@ $('#ledger-body').onclick=e=>{
  const group=all.filter(r=>r.timestamp===record.timestamp);
  editingLedger={order:state.order,rows:group.map(r=>({selection:{tab:state.tab,index:r.index,date:r.date,account:r.account,timestamp:r.timestamp},readonly:!!(r.superseded||r.event==='edit-reversal')}))};
  $('#ledger-edit-meta').innerHTML=[['统计时间',time(record.timestamp)],['币种',state.order.currency]].map(([label,value])=>`<div class="summary-item"><span>${label}</span><strong>${value}</strong></div>`).join('');
- $('#ledger-edit-rows').innerHTML=group.map((r,index)=>{const readonly=editingLedger.rows[index].readonly;return `<div class="ledger-edit-row${readonly?' readonly':''}" data-edit-row="${index}"><span>${r.account}${readonly?' <small>已冲回</small>':''}</span><select name="direction" aria-label="第 ${index+1} 条借贷方向" ${readonly?'disabled':''}><option ${r.direction==='借记'?'selected':''}>借记</option><option ${r.direction==='贷记'?'selected':''}>贷记</option></select><input name="amount" aria-label="第 ${index+1} 条金额" inputmode="decimal" value="${Number((r.cents/1000).toFixed(3))}" ${readonly?'disabled':''}></div>`;}).join('');
+ $('#ledger-edit-rows').innerHTML=group.map((r,index)=>{const readonly=editingLedger.rows[index].readonly;return `<div class="ledger-edit-row${readonly?' readonly':''}" data-edit-row="${index}"><span>${r.account}${readonly?' <small>已冲回</small>':''}</span><select name="direction" aria-label="第 ${index+1} 条借贷方向" ${readonly?'disabled':''}><option ${r.direction==='借记'?'selected':''}>借记</option><option ${r.direction==='贷记'?'selected':''}>贷记</option></select><input name="amount" aria-label="第 ${index+1} 条金额" inputmode="${state.order.currency==='JPY'?'numeric':'decimal'}" value="${amountText(r.cents,state.order.currency,false)}" ${readonly?'disabled':''}></div>`;}).join('');
  $('#ledger-edit-error').textContent='';$('#ledger-edit-dialog').showModal();
 };
 for(const id of ['ledger-edit-close','ledger-edit-cancel'])$('#'+id).onclick=()=>$('#ledger-edit-dialog').close();
@@ -202,7 +225,7 @@ $('#ledger-edit-form').onsubmit=e=>{
  for(const [index,record] of editingLedger.rows.entries()){
   if(record.readonly)continue;
   const row=$(`#ledger-edit-rows [data-edit-row="${index}"]`),raw=row.querySelector('[name=amount]').value.trim();
-  if(!/^\d+(?:\.\d{1,3})?$/.test(raw)){$('#ledger-edit-error').textContent='请输入非负金额，最多保留 3 位小数';return;}
+  if(!amountPattern(state.order.currency).test(raw)){$('#ledger-edit-error').textContent=amountRule(state.order.currency);return;}
   edits.push({selection:record.selection,direction:row.querySelector('[name=direction]').value,cents:Math.round(Number(raw)*1000)});
  }
  try{FinanceModel.editLedgerGroup(editingLedger.order,edits);}catch(error){$('#ledger-edit-error').textContent=error.message;return;}
@@ -255,7 +278,7 @@ function updateManualEntryControls(){
  });
 }
 function addManualEntry(){
- manualEntries.insertAdjacentHTML('beforeend',`<div class="manual-entry"><div class="manual-entry-header"><strong class="manual-entry-title"></strong><button type="button" data-remove-manual aria-label="删除此会计科目">删除</button></div><label><span><b class="required" aria-hidden="true">*</b> 会计科目</span><select name="account"><option value="">请选择会计科目</option><option>平台应收账款</option><option>合同负债</option><option>主营业务收入</option><option>销售费用</option></select></label><label><span><b class="required" aria-hidden="true">*</b> 借贷方向</span><select name="direction"><option value="">请选择借贷方向</option><option>借记</option><option>贷记</option></select></label><label><span><b class="required" aria-hidden="true">*</b> 金额/天</span><div class="manual-amount"><input name="amount" inputmode="decimal" aria-label="金额/天" placeholder="请输入金额"><span>${state.order.currency}</span></div></label></div>`);
+ manualEntries.insertAdjacentHTML('beforeend',`<div class="manual-entry"><div class="manual-entry-header"><strong class="manual-entry-title"></strong><button type="button" data-remove-manual aria-label="删除此会计科目">删除</button></div><label><span><b class="required" aria-hidden="true">*</b> 会计科目</span><select name="account"><option value="">请选择会计科目</option><option>平台应收账款</option><option>合同负债</option><option>主营业务收入</option><option>销售费用</option></select></label><label><span><b class="required" aria-hidden="true">*</b> 借贷方向</span><select name="direction"><option value="">请选择借贷方向</option><option>借记</option><option>贷记</option></select></label><label><span><b class="required" aria-hidden="true">*</b> 金额/天</span><div class="manual-amount"><input name="amount" inputmode="${state.order.currency==='JPY'?'numeric':'decimal'}" aria-label="金额/天" placeholder="请输入金额"><span>${state.order.currency}</span></div></label></div>`);
  updateManualEntryControls();
 }
 $('#manual-add-entry').onclick=addManualEntry;
@@ -285,7 +308,7 @@ $('#ledger-add-form').onsubmit=e=>{
   if(!account){$('#ledger-add-error').textContent='请选择会计科目';return;}
   if(!direction){$('#ledger-add-error').textContent='请选择借贷方向';return;}
   if(!raw){$('#ledger-add-error').textContent='请输入金额';return;}
-  if(!/^\d+(?:\.\d{1,3})?$/.test(raw)){$('#ledger-add-error').textContent='请输入非负金额，最多保留 3 位小数';return;}
+  if(!amountPattern(state.order.currency).test(raw)){$('#ledger-add-error').textContent=amountRule(state.order.currency);return;}
   entries.push({account,direction,cents:Math.round(Number(raw)*1000)});
  }
  try{FinanceModel.addManualRecords(state.order,{startDate:f.elements.startDate.value,endDate:f.elements.endDate.value,entries});}catch(error){$('#ledger-add-error').textContent=error.message;return;}
