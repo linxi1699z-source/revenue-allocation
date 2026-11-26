@@ -104,9 +104,12 @@
 /* Cost management */
 .cost-filters {
  display:grid;
- grid-template-columns:minmax(140px,1fr) minmax(240px,1.4fr) minmax(140px,1fr) minmax(220px,1.2fr);
+ grid-template-columns:minmax(140px,1fr) minmax(240px,1.6fr) minmax(120px,1fr) minmax(100px,.8fr) minmax(220px,1.3fr);
  align-items:end;
  gap:20px;
+}
+@media (max-width:1100px) {
+ .cost-filters {grid-template-columns:minmax(140px,1fr) minmax(240px,1.6fr) minmax(220px,1.3fr)}
 }
 .cost-actions,.cost-row-actions,.cost-options {display:flex;align-items:center;gap:10px}
 .cost-actions {grid-column:1/-1;justify-content:flex-end;flex-wrap:wrap}
@@ -117,6 +120,10 @@
 #cost-export-history .export-history-row button {min-width:50px;font-size:12px}
 .cost-export-range {display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:end;gap:12px}
 .cost-export-range>span {line-height:32px;color:#8b94a3}
+.cost-import-scope,.cost-import-progress {color:#465062;font-size:13px;line-height:1.5}
+.cost-import-progress:not(:empty) {margin-top:10px}
+.cost-import-help {display:flex;align-items:center;justify-content:space-between;gap:12px}
+#cost-import-form input[type="file"] {height:auto;min-height:32px;padding:6px 10px}
 .cost-filters .unified-range {width:100%}
 .cost-table,.cost-model-table {width:100%;border-collapse:collapse}
 .cost-table {min-width:760px}
@@ -131,12 +138,13 @@
 .cost-summary-table {
  --cost-indent:48px;
  --cost-table-line:#ededed;
- min-width:1070px;
+ min-width:1150px;
  color:#262626;
 }
 .cost-summary-row>th {white-space:nowrap}
 .cost-summary-row>.cost-dimension {max-width:320px;overflow-wrap:anywhere}
 .cost-summary-row>.cost-dimension span {white-space:nowrap}
+.cost-bill-environment {white-space:nowrap}
 .cost-product-text {
  display:block;max-width:clamp(230px,25vw,360px);
  overflow:hidden;text-overflow:ellipsis;

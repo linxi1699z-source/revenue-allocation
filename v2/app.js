@@ -100,14 +100,19 @@ $('#pending-dialog').onclick=e=>{if(e.target===$('#pending-dialog')){const r=e.t
 const CostPages=(()=>{
  const sites={
   '中国大陆':{environment:'国内',currency:'CNY',timezone:'Asia/Shanghai'},
-  美区:{environment:'国外',currency:'USD',timezone:'UTC'},
-  英区:{environment:'国外',currency:'USD',timezone:'UTC'}
+  美区:{environment:'海外',currency:'USD',timezone:'UTC'},
+  英区:{environment:'海外',currency:'USD',timezone:'UTC'}
  };
+ const environments=['国内','海外'];
+ const otherRule={id:0,name:'其他',environments,effective:'—',updated:'—',operator:'系统'};
  const siteZone=()=>sites[state.site].timezone;
  const products=['RingConn Partner+ (Monthly)','RingConn Partner+(Monthly)','RingConn Partner+ (Annual)','RingConn Partner+(Annual)','免费额度'];
  const usageTypes=['免费使用','付费使用'];
+ const billEnvironments=['测试','生产'];
+ const costAmountScale=100000000;
  initMultiSelect('cost-products','产品名称',products,'product');
  initMultiSelect('cost-usage-types','使用类型',usageTypes,'usageType');
+ initMultiSelect('cost-bill-environments','环境',billEnvironments,'billEnvironment');
  const samples=[
   ['Qwen Plus','国内',['qwen-plus','qwen_plus']],
   ['Qwen Turbo','国内',['qwen-turbo','qwen_turbo']],
@@ -115,22 +120,29 @@ const CostPages=(()=>{
   ['Qwen Long','国内',['qwen-long','qwen_long']],
   ['Qwen Flash','国内',['qwen-flash','qwen_flash']],
   ['DeepSeek V3','国内',['deepseek-v3','deepseek_v3']],
-  ['Claude Haiku 4.5','国外',['claude-haiku-4-5','claude_haiku_4_5']],
-  ['Claude Sonnet 4.5','国外',['claude-sonnet-4-5','claude_sonnet_4_5']],
-  ['Claude Opus 4.5','国外',['claude-opus-4-5','claude_opus_4_5']],
-  ['Nova Micro','国外',['nova-micro','nova_micro']],
-  ['Nova Lite','国外',['nova-lite','nova_lite']],
-  ['Nova Pro','国外',['nova-pro','nova_pro']]
+  ['Claude Haiku 4.5','海外',['claude-haiku-4-5','claude_haiku_4_5']],
+  ['Claude Sonnet 4.5','海外',['claude-sonnet-4-5','claude_sonnet_4_5']],
+  ['Claude Opus 4.5','海外',['claude-opus-4-5','claude_opus_4_5']],
+  ['Nova Micro','海外',['nova-micro','nova_micro']],
+  ['Nova Lite','海外',['nova-lite','nova_lite']],
+  ['Nova Pro','海外',['nova-pro','nova_pro']]
  ];
  const storageKey='revenue-cost-config-v1';
  const seed=samples.map(([name,environment,rules],index)=>({
-  id:index+1,name,environment,rules,
+  id:index+1,name,environments:[environment],rules,
   effective:'2025-11-01',updated:'2025-11-01 10:00',operator:'finance.admin'
  }));
  const stored=localStorage.getItem(storageKey);
  let data=stored?JSON.parse(stored):{nextId:seed.length+1,configs:seed};
+ data.configs=data.configs.filter(config=>config.name.trim()!==otherRule.name).map(config=>{
+  const {environment,...rule}=config;
+  const selected=rule.environments??[environment==='国外'?'海外':environment];
+  return {...rule,environments:environments.filter(value=>selected.includes(value))};
+ });
+ const importedKey='revenue-prototype-v2-cost-bills';
+ let imported=JSON.parse(localStorage.getItem(importedKey)||'[]');
  const records=Object.entries(sites).flatMap(([site,{environment}],siteIndex)=>{
-  const models=seed.filter(config=>config.environment===environment);
+  const models=seed.filter(config=>config.environments.includes(environment));
   const days=[...Array.from({length:18},(_,i)=>Date.UTC(2026,10,24-i, i%2?3:17)),
    ...Array.from({length:11},(_,i)=>Date.UTC(2026,9-i,20,16))];
   return days.flatMap((timestamp,day)=>models.map((model,index)=>{
@@ -139,7 +151,8 @@ const CostPages=(()=>{
    const tokens=187350+(day*27839+index*42137+siteIndex*60259)%765000;
    const product=products[(day+index+siteIndex)%products.length];
    const usageType=product==='免费额度'?usageTypes[0]:usageTypes[1];
-   return {site,timestamp,rawName,product,usageType,
+   const billEnvironment=billEnvironments[(day+index+siteIndex)%3===0?0:1];
+   return {site,timestamp,rawName,product,usageType,billEnvironment,
     tokens,actual:tokens-Math.round(tokens*0.065),cents:Math.round(tokens*(0.00092+index*0.00031))};
   }));
  });
@@ -161,7 +174,7 @@ const CostPages=(()=>{
   search.elements.end.value=end;
   return {start,end};
  }
- let filters={model:'',...setRecentDateRange(),products:[],usageTypes:[]};
+ let filters={model:'',...setRecentDateRange(),products:[],usageTypes:[],billEnvironments:[]};
  const escape=value=>String(value).replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
  const normalize=value=>value.trim().toLowerCase();
  const today=()=>FinanceModel.dateInZone(Date.now(),'Asia/Shanghai');
@@ -186,25 +199,41 @@ const CostPages=(()=>{
   status.hidden=false;
   statusTimer=setTimeout(()=>{status.hidden=true;},2600);
  }
- function mappedRecords(){
-  const environment=sites[state.site].environment;
-  const configs=data.configs.filter(config=>config.environment===environment).sort((a,b)=>b.effective.localeCompare(a.effective)||a.id-b.id);
-  return records.filter(record=>record.site===state.site).map(record=>{
-   const billingDate=FinanceModel.dateInZone(record.timestamp,'Asia/Shanghai');
-   const alias=normalize(record.rawName);
-   const matches=configs.filter(config=>config.effective<=billingDate);
-   let best=null;
-   let longest=0;
-   for(const config of matches){
-    for(const rule of config.rules){
-     const fragment=normalize(rule);
-     if(fragment.length>longest&&alias.includes(fragment)){
-      best=config;
-      longest=fragment.length;
-     }
+ function rulesFor(site){
+  const environment=sites[site].environment;
+  return data.configs.filter(config=>config.environments.includes(environment))
+   .sort((a,b)=>b.effective.localeCompare(a.effective)||a.id-b.id);
+ }
+ function matchModel(rawName,billingDate,configs){
+  const alias=normalize(rawName);
+  let model=otherRule.name,longest=0;
+  for(const config of configs){
+   if(config.effective>billingDate)continue;
+   for(const rule of config.rules){
+    const fragment=normalize(rule);
+    if(fragment.length>longest&&alias.includes(fragment)){
+     model=config.name;
+     longest=fragment.length;
     }
    }
-   return {...record,model:best?.name??record.rawName,date:dateInZone(record.timestamp)};
+  }
+  return model;
+ }
+ const sampleUsdRates=[0.1389,0.1391,0.1388,0.1392,0.1390,0.1393,0.1389];
+ function usdAmount(amountUnits,currency,date){
+  if(currency==='USD')return amountUnits;
+  // Prototype rate lookup by bill date. Replace this source when the service is specified.
+  const dayIndex=Math.floor(Date.parse(date+'T00:00:00Z')/86400000);
+  const rate=sampleUsdRates[((dayIndex%7)+7)%7];
+  return Math.sign(amountUnits)*Math.round(Math.abs(amountUnits)*rate);
+ }
+ function mappedRecords(){
+  const site=state.site,currency=sites[site].currency,configs=rulesFor(site);
+  return [...records,...imported].filter(record=>record.site===site).map(record=>{
+   const date=dateInZone(record.timestamp);
+   const model=record.model??matchModel(record.rawName,date,configs);
+   const amountUnits=record.amountUnits??record.cents*(costAmountScale/100);
+   return {...record,model,date,amountUnits,usdUnits:usdAmount(amountUnits,currency,date)};
   });
  }
  function syncModels(rows){
@@ -216,17 +245,19 @@ const CostPages=(()=>{
   if(!names.includes(filters.model))filters.model='';
  }
  function addMetrics(target,source){
-  target.tokens+=source.tokens;
-  target.actual+=source.actual;
-  target.cents+=source.cents;
+  if(source.tokens!=null)target.tokens=(target.tokens??0)+source.tokens;
+  if(source.actual!=null)target.actual=(target.actual??0)+source.actual;
+  target.amountUnits+=source.amountUnits;
+  target.usdUnits+=source.usdUnits;
  }
  function sum(target,source){
   addMetrics(target,source);
   target.products.add(source.product);
   target.usageTypes.add(source.usageType);
+  target.billEnvironments.add(source.billEnvironment);
  }
- const metrics=()=>({tokens:0,actual:0,cents:0});
- const totals=()=>({...metrics(),products:new Set(),usageTypes:new Set()});
+ const metrics=()=>({tokens:null,actual:null,amountUnits:0,usdUnits:0});
+ const totals=()=>({...metrics(),products:new Set(),usageTypes:new Set(),billEnvironments:new Set()});
  const dimensionValues=({products:matchedProducts,usageTypes:matchedTypes})=>[
   products.filter(product=>matchedProducts.has(product)),
   usageTypes.filter(type=>matchedTypes.has(type))
@@ -238,6 +269,7 @@ const CostPages=(()=>{
    (!selection.model||row.model===selection.model)&&
    (!selection.products.length||selection.products.includes(row.product))&&
    (!selection.usageTypes.length||selection.usageTypes.includes(row.usageType))&&
+   (!selection.billEnvironments.length||selection.billEnvironments.includes(row.billEnvironment))&&
    (!selection.start||row.date>=selection.start)&&
    (!selection.end||row.date<=selection.end)
   );
@@ -273,23 +305,28 @@ const CostPages=(()=>{
   hideProductTooltip();
   const groups=groupsFor(matchingRows(rows,filters),grain);
   const currency=sites[state.site].currency;
-  const money=new Intl.NumberFormat('en-US',{style:'currency',currency,currencyDisplay:'code'});
-  const cells=({tokens,actual,cents})=>`<td class="money">${number.format(tokens)}</td><td class="money">${number.format(actual)}</td><td class="money">${money.format(cents/100)}</td>`;
+  const moneyOptions={style:'currency',currencyDisplay:'narrowSymbol',minimumFractionDigits:2,maximumFractionDigits:8};
+  const money=new Intl.NumberFormat('en-US',{...moneyOptions,currency});
+  const usd=new Intl.NumberFormat('en-US',{...moneyOptions,currency:'USD'});
+  const count=value=>value==null?'—':number.format(value);
+  const cells=({tokens,actual,amountUnits,usdUnits})=>`<td class="money">${count(tokens)}</td><td class="money">${count(actual)}</td><td class="money">${money.format(amountUnits/costAmountScale)}</td><td class="money">${usd.format(usdUnits/costAmountScale)}</td>`;
   const dimensions=group=>{
    const [names,types]=dimensionValues(group);
-   return `<td class="cost-dimension"><span class="cost-product-text" tabindex="0">${escape(names.join(', '))}</span></td>
-    <td class="cost-dimension">${types.map(value=>`<span>${escape(value)}</span>`).join(', <wbr>')}</td>`;
+   const environments=billEnvironments.filter(value=>group.billEnvironments.has(value));
+   return `<td class="cost-dimension"><span class="cost-product-text" tabindex="0">${escape(names.join(', ')||'—')}</span></td>
+    <td class="cost-dimension">${types.map(value=>`<span>${escape(value)}</span>`).join(', <wbr>')||'—'}</td>
+    <td class="cost-bill-environment">${environments.join(', ')||'—'}</td>`;
   };
   renderPagination('cost-summary-pages',groups.length,summary,'page','size',()=>renderSummary());
   summaryBody.innerHTML=groups.slice((summary.page-1)*summary.size,summary.page*summary.size).map(group=>{
    const open=expanded.has(group.date),rowId='cost-models-'+group.date;
    const models=modelEntries(group);
    return `<tr class="cost-summary-row"><td class="cost-expand-cell"><button type="button" class="cost-expand" data-cost-expand="${group.date}" aria-expanded="${open}" aria-controls="${rowId}" aria-label="${open?'收起':'展开'} ${group.date} 的模型明细">${open?'−':'+'}</button></td><th scope="row">${group.date}</th>${dimensions(group)}${cells(group)}</tr>
-   <tr id="${rowId}" class="cost-expanded-row" ${open?'':'hidden'}><td colspan="7"><table class="cost-model-table" aria-label="${group.date} 模型费用明细">
-    <thead><tr><th scope="col">模型名称</th><th scope="col" class="money">消耗Token</th><th scope="col" class="money">实际消耗(Token)</th><th scope="col" class="money">费用总额</th></tr></thead>
+   <tr id="${rowId}" class="cost-expanded-row" ${open?'':'hidden'}><td colspan="9"><table class="cost-model-table" aria-label="${group.date} 模型费用明细">
+    <thead><tr><th scope="col">模型名称</th><th scope="col" class="money">消耗Token</th><th scope="col" class="money">实际消耗(Token)</th><th scope="col" class="money">费用金额</th><th scope="col" class="money">费用金额(USD)</th></tr></thead>
     <tbody>${models.map(([name,total])=>`<tr><th scope="row">${escape(name)}</th>${cells(total)}</tr>`).join('')}</tbody>
    </table></td></tr>`;
-  }).join('')||'<tr><td colspan="7" class="cost-empty">暂无符合条件的成本数据</td></tr>';
+  }).join('')||'<tr><td colspan="9" class="cost-empty">暂无符合条件的成本数据</td></tr>';
  }
  function hideProductTooltip(){
   if(!tooltipSource)return;
@@ -330,7 +367,7 @@ const CostPages=(()=>{
   event.preventDefault();
   const values=new FormData(search);
   filters={model:values.get('model'),start:values.get('start'),end:values.get('end'),
-   products:values.getAll('product'),usageTypes:values.getAll('usageType')};
+   products:values.getAll('product'),usageTypes:values.getAll('usageType'),billEnvironments:values.getAll('billEnvironment')};
   resetSummary();
   renderSummary();
  };
@@ -415,7 +452,7 @@ const CostPages=(()=>{
   exportForm.elements.monthStart.value=filters.start.slice(0,7);
   exportForm.elements.monthEnd.value=filters.end.slice(0,7);
   const zone=siteZone()==='UTC'?'UTC/GMT':siteZone();
-  $('#cost-export-scope').textContent=`按当前站点（${state.site}）、时区（${zone}）和已应用的模型、产品名称及使用类型筛选导出全部分页。生成后可在「导出记录」下载 Excel。`;
+  $('#cost-export-scope').textContent=`按当前站点（${state.site}）、时区（${zone}）和已应用的模型、产品名称、使用类型及环境筛选导出全部分页。生成后可在「导出记录」下载 Excel。`;
   syncExportRange();
   exportDialog.showModal();
  };
@@ -445,8 +482,8 @@ const CostPages=(()=>{
    await new Promise(resolve=>setTimeout(resolve,900));
    const matched=matchingRows(rows,selection);
    if(!matched.length)throw Error('所选范围内暂无可导出的成本数据');
-   const headings=['产品名称','使用类型','消耗Token','实际消耗(Token)','费用总额'];
-   const amounts=({tokens,actual,cents})=>[tokens,actual,cents/100];
+   const headings=['产品名称','使用类型','消耗Token','实际消耗(Token)','费用金额','费用金额(USD)'];
+   const amounts=({tokens,actual,amountUnits,usdUnits})=>[tokens??'',actual??'',amountUnits/costAmountScale,usdUnits/costAmountScale];
    const summaries=groupsFor(matched,dimension).map(group=>[
     group.date,...dimensionValues(group).map(items=>items.join(', ')),...amounts(group)
    ]);
@@ -467,13 +504,13 @@ const CostPages=(()=>{
   }
  };
  function renderConfigs(){
-  const rows=[...data.configs].sort((a,b)=>b.id-a.id);
+  const rows=[otherRule,...[...data.configs].sort((a,b)=>b.id-a.id)];
   renderPagination('cost-config-pages',rows.length,configPage,'page','size',renderConfigs);
   configBody.innerHTML=rows.slice((configPage.page-1)*configPage.size,configPage.page*configPage.size).map(config=>`<tr>
-   <td>${config.id}</td><th scope="row">${escape(config.name)}</th><td>${config.environment}</td>
+   <td>${config.id}</td><th scope="row">${escape(config.name)}</th><td>${config.environments.join(', ')}</td>
    <td>${config.effective}</td><td>${config.updated}</td><td>${escape(config.operator)}</td>
-   <td><div class="cost-row-actions"><button type="button" class="cost-link" data-cost-edit="${config.id}">编辑</button><button type="button" class="cost-link cost-danger" data-cost-delete="${config.id}">删除</button></div></td>
-   </tr>`).join('')||'<tr><td colspan="7" class="cost-empty">暂无配置</td></tr>';
+   <td>${config===otherRule?'—':`<div class="cost-row-actions"><button type="button" class="cost-link" data-cost-edit="${config.id}">编辑</button><button type="button" class="cost-link cost-danger" data-cost-delete="${config.id}">删除</button></div>`}</td>
+   </tr>`).join('');
  }
  function syncRules(){
   const rows=Array.from(ruleList.children);
@@ -506,7 +543,7 @@ const CostPages=(()=>{
   $('#cost-config-title').textContent=config?'编辑配置':'新增配置';
   $('#cost-config-error').textContent='';
   form.elements.modelName.value=config?.name??'';
-  form.elements.environment.value=config?.environment??'';
+  for(const input of form.elements.environment)input.checked=config?.environments.includes(input.value)??false;
   form.elements.effective.value=config?.effective??today();
   ruleList.replaceChildren();
   (config?.rules??['']).forEach(addRule);
@@ -518,17 +555,18 @@ const CostPages=(()=>{
  form.onsubmit=event=>{
   event.preventDefault();
   const values=new FormData(form),name=values.get('modelName').trim();
-  const environment=values.get('environment'),effective=values.get('effective');
+  const selectedEnvironments=values.getAll('environment'),effective=values.get('effective');
   const rules=values.getAll('rule').map(value=>value.trim());
   const error=$('#cost-config-error');
   if(!name){error.textContent='请输入模型名称';return;}
-  if(data.configs.some(config=>config.id!==editingId&&normalize(config.name)===normalize(name))){
+  if(name===otherRule.name||data.configs.some(config=>config.id!==editingId&&normalize(config.name)===normalize(name))){
    error.textContent='模型名称已存在';return;
   }
+  if(!selectedEnvironments.length){error.textContent='请选择环境';return;}
   if(rules.some(rule=>!rule)){error.textContent='请输入匹配规则';return;}
   if(new Set(rules.map(normalize)).size!==rules.length){error.textContent='匹配规则不能重复';return;}
   const adding=editingId===null;
-  const config={id:adding?data.nextId:editingId,name,environment,effective,rules,
+  const config={id:adding?data.nextId:editingId,name,environments:selectedEnvironments,effective,rules,
    updated:FinanceModel.formatTime(Date.now(),'Asia/Shanghai').slice(0,16),operator:'finance.admin'};
   const configs=adding?[...data.configs,config]:data.configs.map(old=>old.id===config.id?config:old);
   save({nextId:data.nextId+Number(adding),configs});
@@ -552,6 +590,154 @@ const CostPages=(()=>{
   deleteDialog.close();
   renderConfigs();
   notify('配置已删除');
+ };
+ const importDialog=$('#cost-import-dialog'),importForm=$('#cost-import-form');
+ const importError=$('#cost-import-error'),importProgress=$('#cost-import-progress');
+ const mainlandBill={
+  name:'中国大陆成本模板',
+  provider:'阿里云',
+  columns:['BillingDate','ProductName','ProductCode','ProductDetail','CommodityCode','BillingItem','InstanceID','Item','SubscriptionType','Currency',
+   'PretaxAmount','PretaxGrossAmount','AfterDiscountAmount','Usage','UsageUnit','ModelName'],
+  amount:'AfterDiscountAmount',
+  currency:'Currency',
+  model:'ModelName',
+  example:date=>[date,'智能体服务平台','sfm','百炼知识库（RAG）-后付费','sfm_ragserviceinstance_public_cn','旗舰版-计算资源',
+   'example-instance','PayAsYouGoBill','PayAsYouGo','CNY','9.6','9.6','9.6','48','RCU','']
+ };
+ const overseasBill={
+  name:'美区和英区成本导入模板',
+  provider:'AWS',
+  columns:['start_utc','end_utc','service','usage_type','model_id','category','cost_metric','amount','currency','estimated','time_basis'],
+  amount:'amount',
+  currency:'currency',
+  model:'model_id',
+  example:date=>{
+   const nextDay=new Date(Date.parse(date+'T00:00:00Z')+86400000).toISOString().slice(0,10);
+   return [date+'T00:00:00+00:00',nextDay+'T00:00:00+00:00','Amazon Bedrock','USE1-NovaMultiModalEmbeddings-input-tokens',
+    '','unallocated','UnblendedCost','0.02170638','USD','TRUE','utc_daily_context_only'];
+  }
+ };
+ const billTemplateFor=site=>site==='中国大陆'?mainlandBill:overseasBill;
+ let importSite=null,importBusy=false;
+ $('#cost-import-open').onclick=()=>{
+  importSite=state.site;
+  importForm.reset();
+  importError.textContent='';
+  importProgress.textContent='';
+  const currencyLabel=sites[importSite].currency==='CNY'?'人民币（¥）':'美元（$）';
+  const {provider,name}=billTemplateFor(importSite);
+  $('#cost-import-scope').textContent=`当前站点：${importSite}。请使用「${name}」上传 ${provider} 账单（${currencyLabel}）。`;
+  importDialog.showModal();
+ };
+ $('#cost-import-template').onclick=()=>{
+  const date=FinanceModel.dateInZone(Date.now(),sites[importSite].timezone);
+  const template=billTemplateFor(importSite);
+  const text=exportCsv([template.columns,template.example(date)]);
+  downloadExportJob({name:template.name+'.csv',blob:new Blob([text],{type:'text/csv;charset=utf-8'})});
+ };
+ function parseBillCsv(text){
+  const source=text.replace(/^\uFEFF/,'');
+  const rows=[];
+  let row=[],field='',quoted=false,closedQuote=false;
+  for(let i=0;i<source.length;i++){
+   const char=source[i];
+   if(quoted){
+    if(char==='"'&&source[i+1]==='"'){field+='"';i++;}
+    else if(char==='"'){quoted=false;closedQuote=true;}
+    else field+=char;
+    continue;
+   }
+   if(char===','||char==='\r'||char==='\n'){
+    row.push(field.trim());
+    field='';
+    closedQuote=false;
+    if(char===',')continue;
+    if(char==='\r'&&source[i+1]==='\n')i++;
+    if(row.some(Boolean))rows.push(row);
+    row=[];
+   }else if(char==='"'&&!field&&!closedQuote){
+    quoted=true;
+   }else{
+    if(closedQuote||char==='"')throw Error('CSV 引号格式不正确');
+    field+=char;
+   }
+  }
+  if(quoted)throw Error('CSV 引号未闭合');
+  row.push(field.trim());
+  if(row.some(Boolean))rows.push(row);
+  return rows;
+ }
+ function readBillRows(text,site){
+  const [header,...rows]=parseBillCsv(text);
+  const template=billTemplateFor(site),currency=sites[site].currency;
+  if(!header||template.columns.some(column=>!header.includes(column))){
+   throw Error(`CSV 表头与${template.name}不匹配`);
+  }
+  if(!rows.length)throw Error('CSV 中没有账单数据');
+  const positions=new Map(header.map((name,index)=>[name,index]));
+  const configs=rulesFor(site);
+  return rows.map((row,index)=>{
+   const cell=name=>row[positions.get(name)]??'';
+   const mainland=template===mainlandBill;
+   const start=cell(mainland?'BillingDate':'start_utc');
+   const date=start.slice(0,10);
+   const timestamp=Date.parse(mainland?start+'T12:00:00Z':start);
+   const dateFormat=mainland?/^\d{4}-\d{2}-\d{2}$/:/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|\+00:00)$/i;
+   if(!dateFormat.test(start)||!Number.isFinite(timestamp)||new Date(timestamp).toISOString().slice(0,10)!==date){
+    throw Error(`第 ${index+2} 行的账单起始日期格式不正确`);
+   }
+   if(cell(template.currency).toUpperCase()!==currency)throw Error(`第 ${index+2} 行的币种须为 ${currency}`);
+   const fee=cell(template.amount);
+   const amountUnits=Math.round(Number(fee)*costAmountScale);
+   if(!/^-?\d+(?:\.\d{1,8})?$/.test(fee)||!Number.isSafeInteger(amountUnits)){
+    throw Error(`第 ${index+2} 行的 ${template.amount} 金额格式不正确`);
+   }
+   let actual=null;
+   if(mainland&&/^tokens?$/i.test(cell('UsageUnit'))&&cell('Usage')!==''){
+    actual=Number(cell('Usage'));
+    if(!Number.isSafeInteger(actual)||actual<0)throw Error(`第 ${index+2} 行的 Token 用量须为非负整数`);
+   }
+   return {site,timestamp,model:matchModel(cell(template.model),date,configs),tokens:null,actual,amountUnits,
+    product:'',usageType:'',billEnvironment:''};
+  });
+ }
+ function setImportBusy(busy){
+  importBusy=busy;
+  for(const control of importForm.querySelectorAll('input,button'))control.disabled=busy;
+  importForm.setAttribute('aria-busy',busy);
+ }
+ importDialog.addEventListener('cancel',event=>{if(importBusy)event.preventDefault();});
+ importForm.onsubmit=async event=>{
+  event.preventDefault();
+  if(importBusy)return;
+  const file=importForm.elements.bill.files[0];
+  if(!file||!/\.csv$/i.test(file.name)){
+   importError.textContent='账单导入失败：请选择 CSV 文件';
+   return;
+  }
+  const site=importSite;
+  importError.textContent='';
+  setImportBusy(true);
+  try{
+   importProgress.textContent='正在读取账单…';
+   const bills=readBillRows(await file.text(),site);
+   importProgress.textContent='正在匹配模型和收入…';
+   await new Promise(resolve=>setTimeout(resolve,450));
+   const next=[...imported,...bills];
+   localStorage.setItem(importedKey,JSON.stringify(next));
+   imported=next;
+   importDialog.close();
+   if(state.site===site&&location.hash==='#cost-details'){
+    resetSummary();
+    refreshSummary();
+   }
+   notify('账单导入成本');
+  }catch(error){
+   importError.textContent='账单导入失败：'+error.message;
+  }finally{
+   setImportBusy(false);
+   importProgress.textContent='';
+  }
  };
  function refreshSummary(){
   const rows=mappedRecords();
@@ -589,7 +775,7 @@ function route(){
  else state.order=null;
  CostPages.route(costDetails,costConfig);
  $('.page-heading').hidden=!bills;$('#list-view').hidden=detail||bills||payment||cost;$('#detail-view').hidden=!detail;$('#bills-view').hidden=!bills;
- const title=costDetails?'成本明细':costConfig?'成本配置':bills?'账单汇总':detail?'分摊明细':'收入明细';
+ const title=costDetails?'成本明细':costConfig?'模型匹配规则':bills?'账单汇总':detail?'分摊明细':'收入明细';
  $('#page-title').textContent=title;$('#page-subtitle').textContent=bills?'订阅业务账单管理':detail?'查看订单对应的收入确认与借贷记录':'查询订阅订单收入，追踪每日与每月的分摊记录';
  $('#breadcrumb').innerHTML='财务中心 <b>›</b> '+(detail?'<a href="#income">收入明细</a> <b>›</b> '+title:title);
  if(payment)$('#breadcrumb').innerHTML='首页 <b>›</b> 支付中心 <b>›</b> 订单管理';
@@ -623,15 +809,17 @@ function costExportWorkbook(sheets,currency){
  const relationship=(id,type,target)=>`<Relationship Id="${id}" Type="${office}/${type}" Target="${target}"/>`;
  const relationships=entries=>`<Relationships xmlns="${packageRels}">${entries.join('')}</Relationships>`;
  const styles=`<styleSheet xmlns="${spreadsheet}">
-  <numFmts count="1"><numFmt numFmtId="164" formatCode="&quot;${escapeHtml(currency)}&quot; #,##0.00"/></numFmts>
+  <numFmts count="2"><numFmt numFmtId="164" formatCode="&quot;${currency==='CNY'?'¥':'$'}&quot;#,##0.00######"/>
+   <numFmt numFmtId="165" formatCode="&quot;$&quot;#,##0.00######"/></numFmts>
   <fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts>
   <fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>
   <borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>
   <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
-  <cellXfs count="4"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
+  <cellXfs count="5"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
    <xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>
    <xf numFmtId="3" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>
-   <xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/></cellXfs>
+   <xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>
+   <xf numFmtId="165" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/></cellXfs>
   <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
  </styleSheet>`;
  const worksheet=({rows})=>{
@@ -639,7 +827,10 @@ function costExportWorkbook(sheets,currency){
   const columnWidths=rows[0].map(heading=>({'统计时间':16,'模型名称':34,'产品名称':76,'使用类型':24,'实际消耗(Token)':23}[heading]??20));
   const rowXml=rows.map((row,i)=>`<row r="${i+1}">${row.map((value,j)=>{
    const reference=String.fromCharCode(65+j)+(i+1);
-   if(typeof value==='number')return `<c r="${reference}" s="${j===columns-1?3:2}"><v>${value}</v></c>`;
+   if(typeof value==='number'){
+    const style=j===columns-1?4:j===columns-2?3:2;
+    return `<c r="${reference}" s="${style}"><v>${value}</v></c>`;
+   }
    const safeText=escapeHtml(String(value).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]/g,''));
    return `<c r="${reference}" s="${i===0?1:0}" t="inlineStr"><is><t xml:space="preserve">${safeText}</t></is></c>`;
   }).join('')}</row>`).join('');
