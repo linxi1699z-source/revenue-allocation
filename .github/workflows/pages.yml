@@ -24,6 +24,7 @@ jobs:
           python3 scripts/build_flowchart_web.py
           mkdir public
           cp index.html app.js model.js payment.js styles.css select-design.css select-design.js public/
+          cp -R v2 public/
           cp -R flowcharts public/
           cp '收入分摊流程图.drawio' public/
       - uses: actions/upload-pages-artifact@v3

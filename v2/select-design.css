@@ -1,0 +1,37 @@
+/* Ant Design Select visual tokens; local static-prototype adapter. */
+body select, body .multi-select-toggle, body input[list], body input[data-design-list] {
+  appearance:none; border:1px solid #d9d9d9; border-radius:6px; background-color:#fff;
+  color:rgba(0,0,0,.88); font-size:14px; min-height:32px; line-height:22px;
+  padding:4px 30px 4px 11px; transition:border-color .2s,box-shadow .2s;
+}
+body select, body input[list], body input[data-design-list] { background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='m2 4 4 4 4-4' fill='none' stroke='%23bfbfbf' stroke-width='1.2'/%3E%3C/svg%3E"); background-repeat:no-repeat; background-position:right 11px center; }
+body select:hover, body .multi-select-toggle:hover, body input[list]:hover { border-color:#4096ff; }
+body select:focus, body .multi-select-toggle:focus-visible, body .multi-select.open .multi-select-toggle, body input[data-design-list]:focus { outline:none; border-color:#1677ff; box-shadow:0 0 0 2px rgba(5,145,255,.1); }
+body select:disabled { color:rgba(0,0,0,.25); background-color:rgba(0,0,0,.04); cursor:not-allowed; box-shadow:none; border-color:#d9d9d9; }
+body select[aria-invalid=true],body select.invalid { border-color:#ff4d4f; }
+body .multi-select-toggle { justify-content:flex-start; flex-wrap:wrap; gap:4px; position:relative; padding-right:26px; }
+body .multi-select-toggle:after { content:''; position:absolute; right:12px; top:12px; width:6px; height:6px; border-right:1px solid #bfbfbf; border-bottom:1px solid #bfbfbf; transform:rotate(45deg); margin:0; }
+.select-design-tag { display:inline-flex; align-items:center; gap:4px; border-radius:4px; background:rgba(0,0,0,.06); padding:0 5px; font-size:12px; line-height:22px; max-width:100%; }
+.select-design-remove { color:#999; cursor:pointer; padding:0 2px; }
+.select-design-remove:hover { color:#333; }
+body .multi-select-menu, .select-design-popup { padding:4px; border:0; border-radius:8px; background:#fff; box-shadow:0 6px 16px 0 #00000014,0 3px 6px -4px #0000001f,0 9px 28px 8px #0000000d; max-height:256px; overflow:auto; box-sizing:border-box; }
+body .multi-select-menu { top:calc(100% + 4px); z-index:10000; min-width:100%; }
+body .multi-select-menu .multi-option { position:relative; display:flex; justify-content:flex-start; text-align:left; width:100%; min-height:32px; padding:5px 30px 5px 12px; border-radius:4px; gap:0; color:rgba(0,0,0,.88); font-size:14px; cursor:pointer; }
+body .multi-select-menu .multi-option:hover { background:rgba(0,0,0,.04); }
+body .multi-select-menu .multi-option:has(input:checked) { background:#e6f4ff; font-weight:600; }
+body .multi-select-menu .multi-option input { appearance:none; position:absolute; right:12px; width:14px; height:14px; margin:0; border:0; background:none; }
+body .multi-select-menu .multi-option input:checked:after { content:'✓'; color:#1677ff; font-size:14px; }
+.select-design-popup { position:fixed; z-index:20000; }
+.select-design-option { padding:5px 12px; min-height:32px; line-height:22px; border-radius:4px; cursor:pointer; font-size:14px; color:rgba(0,0,0,.88); overflow-wrap:anywhere; }
+.select-design-option[aria-selected=true] { background:#e6f4ff; font-weight:600; }
+.select-design-option.is-active { background:rgba(0,0,0,.04); }
+.select-design-option[aria-disabled=true] { color:#bfbfbf; cursor:not-allowed; }
+.select-design-empty { padding:20px; text-align:center; color:#bfbfbf; }
+body .filter-controls { flex-wrap:wrap; }
+/* Platform filters grow with selected labels; never wrap their tags. */
+body #platformFilter, body #fxPlatformFilter { flex-shrink:0; width:max-content; }
+body #platformFilterToggle, body #fxPlatformFilterToggle {
+  width:max-content; min-width:170px; flex-wrap:nowrap; white-space:nowrap;
+}
+body #platformFilter .select-design-tag, body #fxPlatformFilter .select-design-tag { flex-shrink:0; white-space:nowrap; }
+body #platformFilter .multi-select-menu, body #fxPlatformFilter .multi-select-menu { width:100%; }
