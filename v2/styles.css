@@ -104,12 +104,9 @@
 /* Cost management */
 .cost-filters {
  display:grid;
- grid-template-columns:minmax(140px,1fr) minmax(240px,1.6fr) minmax(120px,1fr) minmax(100px,.8fr) minmax(220px,1.3fr);
+ grid-template-columns:repeat(2,minmax(135px,1fr)) minmax(200px,1.4fr);
  align-items:end;
  gap:20px;
-}
-@media (max-width:1100px) {
- .cost-filters {grid-template-columns:minmax(140px,1fr) minmax(240px,1.6fr) minmax(220px,1.3fr)}
 }
 .cost-actions,.cost-row-actions,.cost-options {display:flex;align-items:center;gap:10px}
 .cost-actions {grid-column:1/-1;justify-content:flex-end;flex-wrap:wrap}
@@ -122,7 +119,6 @@
 .cost-export-range>span {line-height:32px;color:#8b94a3}
 .cost-import-scope,.cost-import-progress {color:#465062;font-size:13px;line-height:1.5}
 .cost-import-progress:not(:empty) {margin-top:10px}
-.cost-import-help {display:flex;align-items:center;justify-content:space-between;gap:12px}
 #cost-import-form input[type="file"] {height:auto;min-height:32px;padding:6px 10px}
 .cost-filters .unified-range {width:100%}
 .cost-table,.cost-model-table {width:100%;border-collapse:collapse}
@@ -132,34 +128,43 @@
 .cost-table tbody th {font-weight:500;overflow-wrap:anywhere}
 .cost-table tbody>tr>th,.cost-table tbody>tr:hover>td {background:transparent}
 #cost-config-view tbody th[scope="row"] {background:#fff}
+.cost-rule-empty {display:grid;place-items:center;min-height:180px;color:#8b94a3;border-top:1px solid #eef0f3}
 .cost-table .money {text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
 .cost-table .cost-empty {height:110px;text-align:center;color:#8b94a3}
 .cost-summary-scroll {padding:0 16px}
 .cost-summary-table {
  --cost-indent:48px;
  --cost-table-line:#ededed;
- min-width:1150px;
+ min-width:1500px;
  color:#262626;
 }
 .cost-summary-row>th {white-space:nowrap}
 .cost-summary-row>.cost-dimension {max-width:320px;overflow-wrap:anywhere}
 .cost-summary-row>.cost-dimension span {white-space:nowrap}
 .cost-bill-environment {white-space:nowrap}
-.cost-product-text {
+.cost-fee-source {min-width:160px;max-width:245px}
+.cost-ellipsis-text {
  display:block;max-width:clamp(230px,25vw,360px);
- overflow:hidden;text-overflow:ellipsis;
+ overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
 }
-.cost-product-tooltip {
+.cost-fee-source .cost-ellipsis-text {max-width:clamp(160px,16vw,245px)}
+.cost-text-tooltip {
  position:fixed;inset:auto;margin:0;overflow:visible;
  max-width:min(440px,calc(100vw - 16px));padding:7px 10px;
  border:0;border-radius:5px;background:#262626;color:#fff;box-shadow:0 3px 8px #0002;
  font-size:13px;line-height:1.45;overflow-wrap:anywhere;pointer-events:none;
 }
-.cost-product-tooltip::after {
+.cost-text-tooltip::after {
  content:"";position:absolute;top:100%;left:var(--cost-tip-arrow);
  transform:translateX(-50%);border:5px solid transparent;border-top-color:#262626;
 }
-.cost-product-tooltip.below::after {top:auto;bottom:100%;border-top-color:transparent;border-bottom-color:#262626}
+.cost-text-tooltip.below::after {top:auto;bottom:100%;border-top-color:transparent;border-bottom-color:#262626}
+.cost-token-help {
+ min-height:15px;width:15px;height:15px;padding:0;margin-left:3px;
+ border:1px solid #a3abb8;border-radius:50%;background:transparent;
+ color:#646e80;font-size:11px;font-weight:600;line-height:13px;vertical-align:1px;
+}
+.cost-token-help[aria-expanded="true"] {border-color:#1677ff;color:#1677ff}
 .cost-expand-column {width:var(--cost-indent)}
 .cost-summary-table th,.cost-summary-table td {border-bottom-color:var(--cost-table-line)}
 .cost-summary-table thead th {position:relative;background:#fafafa;color:#262626;font-weight:600}
@@ -198,9 +203,15 @@
 .cost-options {gap:16px;flex-wrap:wrap}
 .cost-options label {flex-direction:row;align-items:center;gap:6px}
 .cost-options input {width:15px;height:15px;margin:0;accent-color:#1677ff}
-.cost-rule-row {display:flex;align-items:center;gap:12px;margin:8px 0}
+#cost-rule-list {display:grid;gap:10px;margin:10px 0}
+.cost-rule-card {display:grid;gap:10px;min-width:0;padding:12px;border:1px solid #e1e6ed;border-radius:6px}
+.cost-rule-card-head {display:flex;align-items:center;justify-content:space-between;gap:12px}
+.cost-rule-card-head h3 {margin:0;font-size:14px}
+.cost-rule-fragments {display:grid;gap:8px}
+.cost-rule-row {display:flex;align-items:center;gap:12px}
 .cost-rule-row input {flex:1}
 .cost-rule-add {color:#1677ff;border-style:dashed;width:100%}
+.cost-fragment-add {justify-self:start}
 .cost-error {color:#c74141;margin-top:10px}
 .cost-error:empty {display:none}
 .cost-delete-dialog {width:min(420px,calc(100vw - 32px))}

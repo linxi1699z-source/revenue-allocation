@@ -99,20 +99,39 @@ $('#pending-dialog').addEventListener('close',()=>{state.pendingOrder=null;});
 $('#pending-dialog').onclick=e=>{if(e.target===$('#pending-dialog')){const r=e.target.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)e.target.close();}};
 const CostPages=(()=>{
  const sites={
-  '中国大陆':{environment:'国内',currency:'CNY',timezone:'Asia/Shanghai'},
-  美区:{environment:'海外',currency:'USD',timezone:'UTC'},
-  英区:{environment:'海外',currency:'USD',timezone:'UTC'}
+  '中国大陆':{currency:'CNY',timezone:'Asia/Shanghai'},
+  美区:{currency:'USD',timezone:'UTC'},
+  英区:{currency:'USD',timezone:'UTC'}
  };
- const environments=['国内','海外'];
- const otherRule={id:0,name:'其他',environments,effective:'—',updated:'—',operator:'系统'};
+ const ruleSites=['中国大陆','英区','美区'];
+ const modelFeeType='模型Token消耗';
+ const otherRule={id:0,name:'其他',sites:ruleSites,effective:'—',feeType:modelFeeType,updated:'—',operator:'系统'};
+ const sitesForLegacyEnvironment=environments=>ruleSites.filter(site=>
+  site==='中国大陆'?environments.includes('国内'):environments.some(value=>value==='海外'||value==='国外')
+ );
  const siteZone=()=>sites[state.site].timezone;
  const products=['RingConn Partner+ (Monthly)','RingConn Partner+(Monthly)','RingConn Partner+ (Annual)','RingConn Partner+(Annual)','免费额度'];
  const usageTypes=['免费使用','付费使用'];
  const billEnvironments=['测试','生产'];
+ const webSearchSource='Web Search查询/数据处理';
+ const retrievalSource='知识库相关数据检索';
+ const feeSources=[modelFeeType,webSearchSource,retrievalSource];
+ const sampleFeeSources=[modelFeeType,modelFeeType,modelFeeType,webSearchSource,retrievalSource,retrievalSource];
  const costAmountScale=100000000;
  initMultiSelect('cost-products','产品名称',products,'product');
  initMultiSelect('cost-usage-types','使用类型',usageTypes,'usageType');
  initMultiSelect('cost-bill-environments','环境',billEnvironments,'billEnvironment');
+ const allFeeSources='全部来源';
+ initMultiSelect('cost-fee-sources','费用来源',[allFeeSources,...feeSources],'feeSource');
+ const feeSourceInputs=[...$('#cost-fee-sources').querySelectorAll('input')];
+ const [allFeeSourcesInput,...specificFeeSourceInputs]=feeSourceInputs;
+ allFeeSourcesInput.defaultChecked=true;
+ $('#cost-fee-sources').onchange=event=>{
+  if(event.target===allFeeSourcesInput&&allFeeSourcesInput.checked){
+   specificFeeSourceInputs.forEach(input=>{input.checked=false;});
+  }
+  allFeeSourcesInput.checked=!specificFeeSourceInputs.some(input=>input.checked);
+ };
  const samples=[
   ['Qwen Plus','国内',['qwen-plus','qwen_plus']],
   ['Qwen Turbo','国内',['qwen-turbo','qwen_turbo']],
@@ -128,39 +147,47 @@ const CostPages=(()=>{
   ['Nova Pro','海外',['nova-pro','nova_pro']]
  ];
  const storageKey='revenue-cost-config-v1';
- const seed=samples.map(([name,environment,rules],index)=>({
-  id:index+1,name,environments:[environment],rules,
+ const seed=samples.map(([name,environment,fragments],index)=>({
+  id:index+1,name,sites:sitesForLegacyEnvironment([environment]),feeType:modelFeeType,rules:[{logic:'any',fragments}],
   effective:'2025-11-01',updated:'2025-11-01 10:00',operator:'finance.admin'
  }));
  const stored=localStorage.getItem(storageKey);
  let data=stored?JSON.parse(stored):{nextId:seed.length+1,configs:seed};
  data.configs=data.configs.filter(config=>config.name.trim()!==otherRule.name).map(config=>{
-  const {environment,...rule}=config;
-  const selected=rule.environments??[environment==='国外'?'海外':environment];
-  return {...rule,environments:environments.filter(value=>selected.includes(value))};
+  const {environment,environments,...rule}=config;
+  const selected=rule.sites??sitesForLegacyEnvironment(environments??[environment]);
+  const rules=rule.rules.every(value=>typeof value==='string')?[{logic:'any',fragments:rule.rules}]:rule.rules;
+  return {...rule,sites:ruleSites.filter(site=>selected.includes(site)),feeType:modelFeeType,rules};
  });
  const importedKey='revenue-prototype-v2-cost-bills';
- let imported=JSON.parse(localStorage.getItem(importedKey)||'[]');
- const records=Object.entries(sites).flatMap(([site,{environment}],siteIndex)=>{
-  const models=seed.filter(config=>config.environments.includes(environment));
+ const savedImports=JSON.parse(localStorage.getItem(importedKey)||'[]');
+ let imports=Array.isArray(savedImports)?{bills:savedImports,awsUsage:[]}:savedImports;
+ const records=['中国大陆','美区'].flatMap((site,siteIndex)=>{
+  const models=seed.filter(config=>config.sites.includes(site));
   const days=[...Array.from({length:18},(_,i)=>Date.UTC(2026,10,24-i, i%2?3:17)),
    ...Array.from({length:11},(_,i)=>Date.UTC(2026,9-i,20,16))];
   return days.flatMap((timestamp,day)=>models.map((model,index)=>{
-   const alias=model.rules[day%model.rules.length];
-   const rawName=environment==='国内'?alias+'-2026':(siteIndex===1?'us':'eu')+'.'+(index<3?'anthropic.':'amazon.')+alias+'-v1:0';
+   const aliases=model.rules[0].fragments;
+   const alias=aliases[day%aliases.length];
+   const rawName=site==='中国大陆'?alias+'-2026':'us.'+(index<3?'anthropic.':'amazon.')+alias+'-v1:0';
    const tokens=187350+(day*27839+index*42137+siteIndex*60259)%765000;
    const product=products[(day+index+siteIndex)%products.length];
    const usageType=product==='免费额度'?usageTypes[0]:usageTypes[1];
    const billEnvironment=billEnvironments[(day+index+siteIndex)%3===0?0:1];
-   return {site,timestamp,rawName,product,usageType,billEnvironment,
-    tokens,actual:tokens-Math.round(tokens*0.065),cents:Math.round(tokens*(0.00092+index*0.00031))};
+   const feeSource=sampleFeeSources[(day+index+siteIndex)%sampleFeeSources.length];
+   const tokenUsage=feeSource===modelFeeType;
+   return {site,timestamp,rawName,product,usageType,billEnvironment,feeSource,
+    tokens:tokenUsage?tokens:null,actual:tokenUsage?tokens-Math.round(tokens*0.065):null,
+    cents:Math.round(tokens*(0.00092+index*0.00031))};
   }));
  });
  const search=$('#cost-search'),form=$('#cost-config-form'),dialog=$('#cost-config-dialog');
  const deleteDialog=$('#cost-delete-dialog'),ruleList=$('#cost-rule-list');
  const summaryBody=$('#cost-summary-body'),configBody=$('#cost-config-body');
- const productTooltip=$('#cost-product-tooltip');
+ const textTooltip=$('#cost-text-tooltip');
+ const tokenTip=$('#cost-token-tip');
  let tooltipSource=null;
+ let tokenTipSource=null;
  const zoneSelect=$('#timezone');
  let grain='day',editingId=null,deletingId=null,statusTimer;
  const summary={page:1,size:10},configPage={page:1,size:10};
@@ -174,7 +201,7 @@ const CostPages=(()=>{
   search.elements.end.value=end;
   return {start,end};
  }
- let filters={model:'',...setRecentDateRange(),products:[],usageTypes:[],billEnvironments:[]};
+ let filters={model:'',...setRecentDateRange(),products:[],usageTypes:[],billEnvironments:[],feeSources:[]};
  const escape=value=>String(value).replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
  const normalize=value=>value.trim().toLowerCase();
  const today=()=>FinanceModel.dateInZone(Date.now(),'Asia/Shanghai');
@@ -200,8 +227,7 @@ const CostPages=(()=>{
   statusTimer=setTimeout(()=>{status.hidden=true;},2600);
  }
  function rulesFor(site){
-  const environment=sites[site].environment;
-  return data.configs.filter(config=>config.environments.includes(environment))
+  return data.configs.filter(config=>config.sites.includes(site))
    .sort((a,b)=>b.effective.localeCompare(a.effective)||a.id-b.id);
  }
  function matchModel(rawName,billingDate,configs){
@@ -210,10 +236,13 @@ const CostPages=(()=>{
   for(const config of configs){
    if(config.effective>billingDate)continue;
    for(const rule of config.rules){
-    const fragment=normalize(rule);
-    if(fragment.length>longest&&alias.includes(fragment)){
+    const fragments=rule.fragments.map(normalize);
+    const matched=fragments.filter(fragment=>fragment&&alias.includes(fragment));
+    if(!matched.length||(rule.logic==='all'&&matched.length!==fragments.length))continue;
+    const matchLength=Math.max(...matched.map(fragment=>fragment.length));
+    if(matchLength>longest){
      model=config.name;
-     longest=fragment.length;
+     longest=matchLength;
     }
    }
   }
@@ -229,11 +258,12 @@ const CostPages=(()=>{
  }
  function mappedRecords(){
   const site=state.site,currency=sites[site].currency,configs=rulesFor(site);
-  return [...records,...imported].filter(record=>record.site===site).map(record=>{
+  return [...records,...imports.bills].filter(record=>record.site===site).map(record=>{
    const date=dateInZone(record.timestamp);
    const model=record.model??matchModel(record.rawName,date,configs);
    const amountUnits=record.amountUnits??record.cents*(costAmountScale/100);
-   return {...record,model,date,amountUnits,usdUnits:usdAmount(amountUnits,currency,date)};
+   const feeSource=record.feeSource??(model===otherRule.name?null:modelFeeType);
+   return {...record,model,date,feeSource,amountUnits,usdUnits:usdAmount(amountUnits,currency,date)};
   });
  }
  function syncModels(rows){
@@ -249,19 +279,29 @@ const CostPages=(()=>{
   if(source.actual!=null)target.actual=(target.actual??0)+source.actual;
   target.amountUnits+=source.amountUnits;
   target.usdUnits+=source.usdUnits;
+  if(source.feeSource===modelFeeType){
+   target.tokenUnits=(target.tokenUnits??0)+source.amountUnits;
+   target.tokenUsdUnits=(target.tokenUsdUnits??0)+source.usdUnits;
+  }
+  if(source.feeSource===webSearchSource||source.feeSource===retrievalSource){
+   target.queryStorageUnits=(target.queryStorageUnits??0)+source.amountUnits;
+  }
  }
  function sum(target,source){
   addMetrics(target,source);
   target.products.add(source.product);
   target.usageTypes.add(source.usageType);
   target.billEnvironments.add(source.billEnvironment);
+  target.feeSources.add(source.feeSource);
  }
- const metrics=()=>({tokens:null,actual:null,amountUnits:0,usdUnits:0});
- const totals=()=>({...metrics(),products:new Set(),usageTypes:new Set(),billEnvironments:new Set()});
+ const metrics=()=>({tokens:null,actual:null,amountUnits:0,usdUnits:0,tokenUnits:null,tokenUsdUnits:null,queryStorageUnits:null});
+ const totals=()=>({...metrics(),products:new Set(),usageTypes:new Set(),billEnvironments:new Set(),feeSources:new Set()});
  const dimensionValues=({products:matchedProducts,usageTypes:matchedTypes})=>[
   products.filter(product=>matchedProducts.has(product)),
   usageTypes.filter(type=>matchedTypes.has(type))
  ];
+ const listedFeeSources=group=>feeSources.filter(source=>group.feeSources.has(source));
+ const listedBillEnvironments=group=>billEnvironments.filter(value=>group.billEnvironments.has(value));
  const modelEntries=group=>[...group.models].sort(([a],[b])=>a.localeCompare(b,'zh-CN'));
  const periodFor=(date,dimension)=>dimension==='month'?date.slice(0,7):date;
  function matchingRows(rows,selection){
@@ -270,6 +310,7 @@ const CostPages=(()=>{
    (!selection.products.length||selection.products.includes(row.product))&&
    (!selection.usageTypes.length||selection.usageTypes.includes(row.usageType))&&
    (!selection.billEnvironments.length||selection.billEnvironments.includes(row.billEnvironment))&&
+   (!selection.feeSources.length||selection.feeSources.includes(row.feeSource))&&
    (!selection.start||row.date>=selection.start)&&
    (!selection.end||row.date<=selection.end)
   );
@@ -290,75 +331,105 @@ const CostPages=(()=>{
   const details=new Map();
   for(const row of rows){
    const date=periodFor(row.date,dimension);
-   const {model,product,usageType}=row;
-   const key=JSON.stringify([date,model,product,usageType]);
-   if(!details.has(key))details.set(key,{date,model,product,usageType,...metrics()});
+   const {model,product,usageType,billEnvironment='',feeSource}=row;
+   const key=JSON.stringify([date,model,product,usageType,billEnvironment,feeSource]);
+   if(!details.has(key))details.set(key,{date,model,product,usageType,billEnvironment,feeSource,...metrics()});
    addMetrics(details.get(key),row);
   }
   return [...details.values()].sort((a,b)=>
    b.date.localeCompare(a.date)||a.model.localeCompare(b.model,'zh-CN')||
    products.indexOf(a.product)-products.indexOf(b.product)||
-   usageTypes.indexOf(a.usageType)-usageTypes.indexOf(b.usageType)
+   usageTypes.indexOf(a.usageType)-usageTypes.indexOf(b.usageType)||
+   billEnvironments.indexOf(a.billEnvironment)-billEnvironments.indexOf(b.billEnvironment)||
+   feeSources.indexOf(a.feeSource)-feeSources.indexOf(b.feeSource)
   );
  }
  function renderSummary(rows=mappedRecords()){
-  hideProductTooltip();
+  hideTextTooltip();
   const groups=groupsFor(matchingRows(rows,filters),grain);
   const currency=sites[state.site].currency;
   const moneyOptions={style:'currency',currencyDisplay:'narrowSymbol',minimumFractionDigits:2,maximumFractionDigits:8};
   const money=new Intl.NumberFormat('en-US',{...moneyOptions,currency});
   const usd=new Intl.NumberFormat('en-US',{...moneyOptions,currency:'USD'});
   const count=value=>value==null?'—':number.format(value);
-  const cells=({tokens,actual,amountUnits,usdUnits})=>`<td class="money">${count(tokens)}</td><td class="money">${count(actual)}</td><td class="money">${money.format(amountUnits/costAmountScale)}</td><td class="money">${usd.format(usdUnits/costAmountScale)}</td>`;
+  const moneyCell=(value,formatter=money)=>`<td class="money">${value==null?'—':formatter.format(value/costAmountScale)}</td>`;
+  const tokenCells=({tokens,actual})=>`<td class="money">${count(tokens)}</td><td class="money">${count(actual)}</td>`;
+  const summaryCells=group=>tokenCells(group)+moneyCell(group.queryStorageUnits)+moneyCell(group.tokenUnits)+
+   moneyCell(group.amountUnits)+moneyCell(group.usdUnits,usd);
+  const detailCells=total=>tokenCells(total)+moneyCell(total.tokenUnits)+moneyCell(total.tokenUsdUnits,usd);
   const dimensions=group=>{
    const [names,types]=dimensionValues(group);
-   const environments=billEnvironments.filter(value=>group.billEnvironments.has(value));
-   return `<td class="cost-dimension"><span class="cost-product-text" tabindex="0">${escape(names.join(', ')||'—')}</span></td>
+   const environments=listedBillEnvironments(group);
+   return `<td class="cost-dimension"><span class="cost-ellipsis-text" tabindex="0">${escape(names.join(', ')||'—')}</span></td>
     <td class="cost-dimension">${types.map(value=>`<span>${escape(value)}</span>`).join(', <wbr>')||'—'}</td>
-    <td class="cost-bill-environment">${environments.join(', ')||'—'}</td>`;
+    <td class="cost-bill-environment">${environments.join(', ')||'—'}</td>
+    <td class="cost-fee-source"><span class="cost-ellipsis-text" tabindex="0">${escape(listedFeeSources(group).join(', ')||'—')}</span></td>`;
   };
   renderPagination('cost-summary-pages',groups.length,summary,'page','size',()=>renderSummary());
   summaryBody.innerHTML=groups.slice((summary.page-1)*summary.size,summary.page*summary.size).map(group=>{
    const open=expanded.has(group.date),rowId='cost-models-'+group.date;
    const models=modelEntries(group);
-   return `<tr class="cost-summary-row"><td class="cost-expand-cell"><button type="button" class="cost-expand" data-cost-expand="${group.date}" aria-expanded="${open}" aria-controls="${rowId}" aria-label="${open?'收起':'展开'} ${group.date} 的模型明细">${open?'−':'+'}</button></td><th scope="row">${group.date}</th>${dimensions(group)}${cells(group)}</tr>
-   <tr id="${rowId}" class="cost-expanded-row" ${open?'':'hidden'}><td colspan="9"><table class="cost-model-table" aria-label="${group.date} 模型费用明细">
-    <thead><tr><th scope="col">模型名称</th><th scope="col" class="money">消耗Token</th><th scope="col" class="money">实际消耗(Token)</th><th scope="col" class="money">费用金额</th><th scope="col" class="money">费用金额(USD)</th></tr></thead>
-    <tbody>${models.map(([name,total])=>`<tr><th scope="row">${escape(name)}</th>${cells(total)}</tr>`).join('')}</tbody>
+   return `<tr class="cost-summary-row"><td class="cost-expand-cell"><button type="button" class="cost-expand" data-cost-expand="${group.date}" aria-expanded="${open}" aria-controls="${rowId}" aria-label="${open?'收起':'展开'} ${group.date} 的模型明细">${open?'−':'+'}</button></td><th scope="row">${group.date}</th>${dimensions(group)}${summaryCells(group)}</tr>
+   <tr id="${rowId}" class="cost-expanded-row" ${open?'':'hidden'}><td colspan="12"><table class="cost-model-table" aria-label="${group.date} 模型费用明细">
+    <thead><tr><th scope="col">模型名称</th><th scope="col" class="money">消耗 Token</th><th scope="col" class="money">实际消耗 Token</th><th scope="col" class="money">Token费用</th><th scope="col" class="money">Token费用(USD)</th></tr></thead>
+    <tbody>${models.map(([name,total])=>`<tr><th scope="row">${escape(name)}</th>${detailCells(total)}</tr>`).join('')}</tbody>
    </table></td></tr>`;
-  }).join('')||'<tr><td colspan="9" class="cost-empty">暂无符合条件的成本数据</td></tr>';
+  }).join('')||'<tr><td colspan="12" class="cost-empty">暂无符合条件的成本数据</td></tr>';
  }
- function hideProductTooltip(){
+ function hideTextTooltip(){
   if(!tooltipSource)return;
   tooltipSource=null;
-  productTooltip.hidePopover();
+  textTooltip.hidePopover();
  }
- function showProductTooltip(source){
+ function showTextTooltip(source){
   if(source===tooltipSource)return;
-  hideProductTooltip();
+  hideTextTooltip();
   if(source.scrollWidth<=source.clientWidth)return;
   tooltipSource=source;
-  productTooltip.textContent=source.textContent;
-  productTooltip.showPopover();
-  const anchor=source.getBoundingClientRect(),tip=productTooltip.getBoundingClientRect();
+  textTooltip.textContent=source.textContent;
+  textTooltip.showPopover();
+  positionCostTip(textTooltip,source);
+ }
+ function positionCostTip(popover,source){
+  const anchor=source.getBoundingClientRect(),tip=popover.getBoundingClientRect();
   const above=anchor.top>=tip.height+8;
   const center=anchor.left+anchor.width/2;
   const left=Math.max(8,Math.min(center-tip.width/2,innerWidth-tip.width-8));
-  productTooltip.style.left=left+'px';
-  productTooltip.style.top=(above?anchor.top-tip.height-8:anchor.bottom+8)+'px';
-  productTooltip.style.setProperty('--cost-tip-arrow',Math.max(12,Math.min(center-left,tip.width-12))+'px');
-  productTooltip.classList.toggle('below',!above);
+  popover.style.left=left+'px';
+  popover.style.top=(above?anchor.top-tip.height-8:anchor.bottom+8)+'px';
+  popover.style.setProperty('--cost-tip-arrow',Math.max(12,Math.min(center-left,tip.width-12))+'px');
+  popover.classList.toggle('below',!above);
  }
+ function hideTokenTip(){
+  if(tokenTip.matches(':popover-open'))tokenTip.hidePopover();
+ }
+ tokenTip.addEventListener('beforetoggle',event=>{
+  if(event.newState!=='closed'||!tokenTipSource)return;
+  tokenTipSource.setAttribute('aria-expanded','false');
+  tokenTipSource=null;
+ });
+ for(const button of document.querySelectorAll('[data-cost-token-help]'))button.onclick=event=>{
+  event.preventDefault();
+  const alreadyOpen=tokenTipSource===button;
+  hideTokenTip();
+  if(alreadyOpen)return;
+  tokenTipSource=button;
+  button.setAttribute('aria-expanded','true');
+  tokenTip.showPopover({source:button});
+  positionCostTip(tokenTip,button);
+ };
  for(const eventName of ['pointerover','focusin'])summaryBody.addEventListener(eventName,event=>{
-  const source=event.target.closest('.cost-product-text');
-  if(source)showProductTooltip(source);
+  const source=event.target.closest('.cost-ellipsis-text');
+  if(source)showTextTooltip(source);
  });
  for(const eventName of ['pointerout','focusout'])summaryBody.addEventListener(eventName,event=>{
-  if(event.target===tooltipSource)hideProductTooltip();
+  if(event.target===tooltipSource)hideTextTooltip();
  });
- document.addEventListener('keydown',event=>{if(event.key==='Escape')hideProductTooltip();});
- window.addEventListener('scroll',hideProductTooltip,true);
- window.addEventListener('resize',hideProductTooltip);
+ document.addEventListener('keydown',event=>{if(event.key==='Escape')hideTextTooltip();});
+ window.addEventListener('scroll',hideTextTooltip,true);
+ window.addEventListener('resize',hideTextTooltip);
+ window.addEventListener('scroll',hideTokenTip,true);
+ window.addEventListener('resize',hideTokenTip);
  function resetSummary(){
   summary.page=1;
   expanded.clear();
@@ -367,7 +438,8 @@ const CostPages=(()=>{
   event.preventDefault();
   const values=new FormData(search);
   filters={model:values.get('model'),start:values.get('start'),end:values.get('end'),
-   products:values.getAll('product'),usageTypes:values.getAll('usageType'),billEnvironments:values.getAll('billEnvironment')};
+   products:values.getAll('product'),usageTypes:values.getAll('usageType'),billEnvironments:values.getAll('billEnvironment'),
+   feeSources:values.getAll('feeSource').filter(value=>value!==allFeeSources)};
   resetSummary();
   renderSummary();
  };
@@ -452,7 +524,7 @@ const CostPages=(()=>{
   exportForm.elements.monthStart.value=filters.start.slice(0,7);
   exportForm.elements.monthEnd.value=filters.end.slice(0,7);
   const zone=siteZone()==='UTC'?'UTC/GMT':siteZone();
-  $('#cost-export-scope').textContent=`按当前站点（${state.site}）、时区（${zone}）和已应用的模型、产品名称、使用类型及环境筛选导出全部分页。生成后可在「导出记录」下载 Excel。`;
+  $('#cost-export-scope').textContent=`按当前站点（${state.site}）、时区（${zone}）和已应用的筛选条件导出全部分页。生成后可在「导出记录」下载 Excel。`;
   syncExportRange();
   exportDialog.showModal();
  };
@@ -482,17 +554,22 @@ const CostPages=(()=>{
    await new Promise(resolve=>setTimeout(resolve,900));
    const matched=matchingRows(rows,selection);
    if(!matched.length)throw Error('所选范围内暂无可导出的成本数据');
-   const headings=['产品名称','使用类型','消耗Token','实际消耗(Token)','费用金额','费用金额(USD)'];
-   const amounts=({tokens,actual,amountUnits,usdUnits})=>[tokens??'',actual??'',amountUnits/costAmountScale,usdUnits/costAmountScale];
+   const dimensions=['产品名称','使用类型','环境','费用来源'];
+   const tokenHeadings=['消耗 Token','实际消耗 Token'];
+   const counts=({tokens,actual})=>[tokens??'',actual??''];
+   const amount=units=>units==null?'':units/costAmountScale;
    const summaries=groupsFor(matched,dimension).map(group=>[
-    group.date,...dimensionValues(group).map(items=>items.join(', ')),...amounts(group)
+    group.date,...dimensionValues(group).map(items=>items.join(', ')),listedBillEnvironments(group).join(', '),
+    listedFeeSources(group).join(', '),...counts(group),
+    amount(group.queryStorageUnits),amount(group.tokenUnits),amount(group.amountUnits),amount(group.usdUnits)
    ]);
    const details=exportDetailsFor(matched,dimension).map(detail=>[
-    detail.date,detail.model,detail.product,detail.usageType,...amounts(detail)
+    detail.date,detail.model,detail.product,detail.usageType,detail.billEnvironment,detail.feeSource??'',
+    ...counts(detail),amount(detail.tokenUnits),amount(detail.tokenUsdUnits)
    ]);
    job.blob=costExportWorkbook([
-    {name:'汇总数据',rows:[['统计时间',...headings],...summaries]},
-    {name:'明细数据',rows:[['统计时间','模型名称',...headings],...details]}
+    {name:'汇总数据',rows:[['统计时间',...dimensions,...tokenHeadings,'查询/存储费用','Token费用','费用总金额','费用总金额(USD)'],...summaries]},
+    {name:'明细数据',rows:[['统计时间','模型名称',...dimensions,...tokenHeadings,'Token费用','Token费用(USD)'],...details]}
    ],currency);
    await saveExportJob(job,exportDatabase);
    if(location.hash==='#cost-details'&&state.site===site)showExportToast('成本报表已生成，可在导出记录中下载');
@@ -507,35 +584,70 @@ const CostPages=(()=>{
   const rows=[otherRule,...[...data.configs].sort((a,b)=>b.id-a.id)];
   renderPagination('cost-config-pages',rows.length,configPage,'page','size',renderConfigs);
   configBody.innerHTML=rows.slice((configPage.page-1)*configPage.size,configPage.page*configPage.size).map(config=>`<tr>
-   <td>${config.id}</td><th scope="row">${escape(config.name)}</th><td>${config.environments.join(', ')}</td>
-   <td>${config.effective}</td><td>${config.updated}</td><td>${escape(config.operator)}</td>
+   <td>${config.id}</td><th scope="row">${escape(config.name)}</th><td>${config.sites.join(', ')}</td>
+   <td>${config.effective}</td><td>${config.feeType}</td><td>${config.updated}</td><td>${escape(config.operator)}</td>
    <td>${config===otherRule?'—':`<div class="cost-row-actions"><button type="button" class="cost-link" data-cost-edit="${config.id}">编辑</button><button type="button" class="cost-link cost-danger" data-cost-delete="${config.id}">删除</button></div>`}</td>
    </tr>`).join('');
  }
  function syncRules(){
-  const rows=Array.from(ruleList.children);
-  rows.forEach((row,index)=>{
-   row.querySelector('input').setAttribute('aria-label','匹配规则 '+(index+1));
-   row.querySelector('button').setAttribute('aria-label','删除匹配规则 '+(index+1));
-   row.querySelector('button').hidden=rows.length<2;
+  const cards=[...ruleList.children];
+  cards.forEach((card,index)=>{
+   const label='规则 '+(index+1);
+   card.querySelector('h3').textContent=label;
+   const removeCard=card.querySelector('[data-remove-rule]');
+   removeCard.setAttribute('aria-label','删除'+label);
+   removeCard.hidden=cards.length<2;
+   const rows=[...card.querySelectorAll('.cost-rule-row')];
+   rows.forEach((row,fragmentIndex)=>{
+    const fragmentLabel=`${label}的模型字符 ${fragmentIndex+1}`;
+    row.querySelector('input').setAttribute('aria-label',fragmentLabel);
+    row.querySelector('button').setAttribute('aria-label','删除'+fragmentLabel);
+    row.querySelector('button').hidden=rows.length<2;
+   });
   });
  }
- function addRule(value=''){
+ function addFragment(list,value=''){
   const row=document.createElement('div');
   row.className='cost-rule-row';
-  row.innerHTML='<input name="rule" required placeholder="请输入账单模型名称中的字符" maxlength="120"><button type="button" class="cost-link cost-danger">删除</button>';
+  row.innerHTML='<input required placeholder="请输入账单模型名称中的字符" maxlength="120"><button type="button" class="cost-link cost-danger">删除</button>';
   const input=row.querySelector('input');
   input.value=value;
   row.querySelector('button').onclick=()=>{
-   if(ruleList.children.length<2)return;
+   if(list.children.length<2)return;
    const focusRow=row.nextElementSibling??row.previousElementSibling;
    row.remove();
    syncRules();
    focusRow.querySelector('input').focus();
   };
-  ruleList.append(row);
-  syncRules();
+  list.append(row);
   return input;
+ }
+ function addRule({logic='all',fragments=['']}={}){
+  const card=document.createElement('div');
+  card.className='cost-rule-card';
+  card.innerHTML=`<div class="cost-rule-card-head"><h3></h3>
+   <button type="button" class="cost-link cost-danger" data-remove-rule>删除规则</button></div>
+   <label>生效逻辑<select required><option value="all">必须同时满足</option><option value="any">满足其中一个即可</option></select></label>
+   <div class="field"><span>模型字符</span><div class="cost-rule-fragments"></div></div>
+   <button type="button" class="cost-link cost-fragment-add">＋ 新增模型字符</button>`;
+  card.querySelector('select').value=logic;
+  const list=card.querySelector('.cost-rule-fragments');
+  fragments.forEach(value=>addFragment(list,value));
+  card.querySelector('.cost-fragment-add').onclick=()=>{
+   const input=addFragment(list);
+   syncRules();
+   input.focus();
+  };
+  card.querySelector('[data-remove-rule]').onclick=()=>{
+   if(ruleList.children.length<2)return;
+   const focusCard=card.nextElementSibling??card.previousElementSibling;
+   card.remove();
+   syncRules();
+   focusCard.querySelector('select').focus();
+  };
+  ruleList.append(card);
+  syncRules();
+  return card;
  }
  function showConfig(config){
   editingId=config?.id??null;
@@ -543,30 +655,58 @@ const CostPages=(()=>{
   $('#cost-config-title').textContent=config?'编辑配置':'新增配置';
   $('#cost-config-error').textContent='';
   form.elements.modelName.value=config?.name??'';
-  for(const input of form.elements.environment)input.checked=config?.environments.includes(input.value)??false;
+  for(const input of form.elements.site)input.checked=config?.sites.includes(input.value)??false;
   form.elements.effective.value=config?.effective??today();
+  form.elements.feeType.value=modelFeeType;
   ruleList.replaceChildren();
-  (config?.rules??['']).forEach(addRule);
+  (config?.rules??[{}]).forEach(addRule);
   dialog.showModal();
  }
  $('#cost-config-add').onclick=()=>showConfig();
- $('#cost-rule-add').onclick=()=>addRule().focus();
+ const configTabs=[...$('#cost-rule-tabs').querySelectorAll('[role="tab"]')];
+ function selectConfigTab(tab){
+  for(const candidate of configTabs){
+   const selected=candidate===tab;
+   candidate.classList.toggle('selected',selected);
+   candidate.setAttribute('aria-selected',selected);
+   candidate.tabIndex=selected?0:-1;
+   document.getElementById(candidate.getAttribute('aria-controls')).hidden=!selected;
+  }
+  $('#cost-config-add').hidden=tab.id!=='cost-rule-model-tab';
+ }
+ for(const tab of configTabs){
+  tab.onclick=()=>selectConfigTab(tab);
+  tab.onkeydown=event=>{
+   const next=event.key==='Home'?configTabs[0]:event.key==='End'?configTabs.at(-1):
+    ['ArrowLeft','ArrowRight'].includes(event.key)?configTabs.find(candidate=>candidate!==tab):null;
+   if(!next)return;
+   event.preventDefault();
+   selectConfigTab(next);
+   next.focus();
+  };
+ }
+ $('#cost-rule-add').onclick=()=>addRule().querySelector('select').focus();
  document.querySelectorAll('[data-close-cost]').forEach(button=>button.onclick=()=>button.closest('dialog').close());
  form.onsubmit=event=>{
   event.preventDefault();
   const values=new FormData(form),name=values.get('modelName').trim();
-  const selectedEnvironments=values.getAll('environment'),effective=values.get('effective');
-  const rules=values.getAll('rule').map(value=>value.trim());
+  const selectedSites=values.getAll('site'),effective=values.get('effective');
+  const rules=[...ruleList.children].map(card=>({
+   logic:card.querySelector('select').value,
+   fragments:[...card.querySelectorAll('input')].map(input=>input.value.trim())
+  }));
   const error=$('#cost-config-error');
   if(!name){error.textContent='请输入模型名称';return;}
   if(name===otherRule.name||data.configs.some(config=>config.id!==editingId&&normalize(config.name)===normalize(name))){
    error.textContent='模型名称已存在';return;
   }
-  if(!selectedEnvironments.length){error.textContent='请选择环境';return;}
-  if(rules.some(rule=>!rule)){error.textContent='请输入匹配规则';return;}
-  if(new Set(rules.map(normalize)).size!==rules.length){error.textContent='匹配规则不能重复';return;}
+  if(!selectedSites.length){error.textContent='请选择站点';return;}
+  for(const [index,{fragments}] of rules.entries()){
+   if(fragments.some(fragment=>!fragment)){error.textContent=`规则 ${index+1}：请输入模型字符`;return;}
+   if(new Set(fragments.map(normalize)).size!==fragments.length){error.textContent=`规则 ${index+1}：模型字符不能重复`;return;}
+  }
   const adding=editingId===null;
-  const config={id:adding?data.nextId:editingId,name,environments:selectedEnvironments,effective,rules,
+  const config={id:adding?data.nextId:editingId,name,sites:selectedSites,effective,feeType:modelFeeType,rules,
    updated:FinanceModel.formatTime(Date.now(),'Asia/Shanghai').slice(0,16),operator:'finance.admin'};
   const configs=adding?[...data.configs,config]:data.configs.map(old=>old.id===config.id?config:old);
   save({nextId:data.nextId+Number(adding),configs});
@@ -594,29 +734,21 @@ const CostPages=(()=>{
  const importDialog=$('#cost-import-dialog'),importForm=$('#cost-import-form');
  const importError=$('#cost-import-error'),importProgress=$('#cost-import-progress');
  const mainlandBill={
-  name:'中国大陆成本模板',
-  provider:'阿里云',
+  name:'aliyun_bill_details.csv',
   columns:['BillingDate','ProductName','ProductCode','ProductDetail','CommodityCode','BillingItem','InstanceID','Item','SubscriptionType','Currency',
    'PretaxAmount','PretaxGrossAmount','AfterDiscountAmount','Usage','UsageUnit','ModelName'],
   amount:'AfterDiscountAmount',
   currency:'Currency',
-  model:'ModelName',
-  example:date=>[date,'智能体服务平台','sfm','百炼知识库（RAG）-后付费','sfm_ragserviceinstance_public_cn','旗舰版-计算资源',
-   'example-instance','PayAsYouGoBill','PayAsYouGo','CNY','9.6','9.6','9.6','48','RCU','']
+  model:'ModelName'
  };
  const overseasBill={
-  name:'美区和英区成本导入模板',
-  provider:'AWS',
+  name:'cost_details.csv',
   columns:['start_utc','end_utc','service','usage_type','model_id','category','cost_metric','amount','currency','estimated','time_basis'],
   amount:'amount',
   currency:'currency',
-  model:'model_id',
-  example:date=>{
-   const nextDay=new Date(Date.parse(date+'T00:00:00Z')+86400000).toISOString().slice(0,10);
-   return [date+'T00:00:00+00:00',nextDay+'T00:00:00+00:00','Amazon Bedrock','USE1-NovaMultiModalEmbeddings-input-tokens',
-    '','unallocated','UnblendedCost','0.02170638','USD','TRUE','utc_daily_context_only'];
-  }
+  model:'model_id'
  };
+ const awsFiles=[['modelUsage','model_usage.csv'],['featureUsage','feature_usage.csv'],['costDetails',overseasBill.name]];
  const billTemplateFor=site=>site==='中国大陆'?mainlandBill:overseasBill;
  let importSite=null,importBusy=false;
  $('#cost-import-open').onclick=()=>{
@@ -624,16 +756,13 @@ const CostPages=(()=>{
   importForm.reset();
   importError.textContent='';
   importProgress.textContent='';
-  const currencyLabel=sites[importSite].currency==='CNY'?'人民币（¥）':'美元（$）';
-  const {provider,name}=billTemplateFor(importSite);
-  $('#cost-import-scope').textContent=`当前站点：${importSite}。请使用「${name}」上传 ${provider} 账单（${currencyLabel}）。`;
+  const mainland=importSite==='中国大陆';
+  $('#cost-import-mainland').hidden=!mainland;
+  $('#cost-import-aws').hidden=mainland;
+  $('#cost-import-scope').textContent=mainland
+   ?`当前站点：${importSite}。请选择一份 CSV 账单。`
+   :`当前站点：${importSite}。请选择三份 CSV 文件。`;
   importDialog.showModal();
- };
- $('#cost-import-template').onclick=()=>{
-  const date=FinanceModel.dateInZone(Date.now(),sites[importSite].timezone);
-  const template=billTemplateFor(importSite);
-  const text=exportCsv([template.columns,template.example(date)]);
-  downloadExportJob({name:template.name+'.csv',blob:new Blob([text],{type:'text/csv;charset=utf-8'})});
  };
  function parseBillCsv(text){
   const source=text.replace(/^\uFEFF/,'');
@@ -671,7 +800,7 @@ const CostPages=(()=>{
   const [header,...rows]=parseBillCsv(text);
   const template=billTemplateFor(site),currency=sites[site].currency;
   if(!header||template.columns.some(column=>!header.includes(column))){
-   throw Error(`CSV 表头与${template.name}不匹配`);
+   throw Error(`账单 CSV 表头与 ${template.name} 的字段不匹配`);
   }
   if(!rows.length)throw Error('CSV 中没有账单数据');
   const positions=new Map(header.map((name,index)=>[name,index]));
@@ -701,6 +830,29 @@ const CostPages=(()=>{
     product:'',usageType:'',billEnvironment:''};
   });
  }
+ function readAwsUsage(text,name){
+  let rows;
+  try{rows=parseBillCsv(text);}catch(error){throw Error(`${name}：${error.message}`);}
+  const [header,...dataRows]=rows;
+  if(!header||header.some(value=>!value)||new Set(header).size!==header.length||
+   dataRows.some(row=>row.length!==header.length)){
+   throw Error(`${name} 的表头或行格式不正确`);
+  }
+  return {name,header,rows:dataRows};
+ }
+ function selectedImportFiles(site){
+  if(site==='中国大陆'){
+   const file=importForm.elements.bill.files[0];
+   if(!file||file.name.toLowerCase()!==mainlandBill.name)throw Error('请选择 '+mainlandBill.name+' 文件');
+   return [file];
+  }
+  return awsFiles.map(([inputName,filename])=>{
+   const file=importForm.elements[inputName].files[0];
+   if(!file)throw Error('请上传 '+filename);
+   if(file.name.toLowerCase()!==filename)throw Error('请选择 '+filename+' 文件');
+   return file;
+  });
+ }
  function setImportBusy(busy){
   importBusy=busy;
   for(const control of importForm.querySelectorAll('input,button'))control.disabled=busy;
@@ -710,22 +862,22 @@ const CostPages=(()=>{
  importForm.onsubmit=async event=>{
   event.preventDefault();
   if(importBusy)return;
-  const file=importForm.elements.bill.files[0];
-  if(!file||!/\.csv$/i.test(file.name)){
-   importError.textContent='账单导入失败：请选择 CSV 文件';
-   return;
-  }
   const site=importSite;
   importError.textContent='';
-  setImportBusy(true);
   try{
+   const files=selectedImportFiles(site);
+   setImportBusy(true);
    importProgress.textContent='正在读取账单…';
-   const bills=readBillRows(await file.text(),site);
+   const contents=await Promise.all(files.map(file=>file.text()));
+   const bills=readBillRows(contents.at(-1),site);
+   const batch=site==='中国大陆'?null:{
+    site,modelUsage:readAwsUsage(contents[0],awsFiles[0][1]),featureUsage:readAwsUsage(contents[1],awsFiles[1][1])
+   };
    importProgress.textContent='正在匹配模型和收入…';
    await new Promise(resolve=>setTimeout(resolve,450));
-   const next=[...imported,...bills];
+   const next={bills:[...imports.bills,...bills],awsUsage:batch?[...imports.awsUsage,batch]:imports.awsUsage};
    localStorage.setItem(importedKey,JSON.stringify(next));
-   imported=next;
+   imports=next;
    importDialog.close();
    if(state.site===site&&location.hash==='#cost-details'){
     resetSummary();
@@ -746,7 +898,8 @@ const CostPages=(()=>{
  }
  return {
   route(details,config){
-   hideProductTooltip();
+   hideTextTooltip();
+   hideTokenTip();
    $('#cost-details-view').hidden=!details;
    $('#cost-config-view').hidden=!config;
    zoneSelect.value=details?siteZone():state.timezone;
@@ -823,12 +976,13 @@ function costExportWorkbook(sheets,currency){
   <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
  </styleSheet>`;
  const worksheet=({rows})=>{
-  const columns=rows[0].length;
-  const columnWidths=rows[0].map(heading=>({'统计时间':16,'模型名称':34,'产品名称':76,'使用类型':24,'实际消耗(Token)':23}[heading]??20));
+  const headings=rows[0];
+  const columnWidths=headings.map(heading=>({'统计时间':16,'模型名称':34,'产品名称':76,'使用类型':24,'费用来源':74,'实际消耗 Token':23}[heading]??20));
   const rowXml=rows.map((row,i)=>`<row r="${i+1}">${row.map((value,j)=>{
    const reference=String.fromCharCode(65+j)+(i+1);
    if(typeof value==='number'){
-    const style=j===columns-1?4:j===columns-2?3:2;
+    const heading=headings[j];
+    const style=heading.endsWith('(USD)')?4:['查询/存储费用','Token费用','费用总金额'].includes(heading)?3:2;
     return `<c r="${reference}" s="${style}"><v>${value}</v></c>`;
    }
    const safeText=escapeHtml(String(value).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]/g,''));
