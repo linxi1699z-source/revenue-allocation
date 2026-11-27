@@ -368,8 +368,11 @@ const CostPages=(()=>{
   renderPagination('cost-summary-pages',groups.length,summary,'page','size',()=>renderSummary());
   summaryBody.innerHTML=groups.slice((summary.page-1)*summary.size,summary.page*summary.size).map(group=>{
    const open=expanded.has(group.date),rowId='cost-models-'+group.date;
-   const models=modelEntries(group);
-   return `<tr class="cost-summary-row"><td class="cost-expand-cell"><button type="button" class="cost-expand" data-cost-expand="${group.date}" aria-expanded="${open}" aria-controls="${rowId}" aria-label="${open?'收起':'展开'} ${group.date} 的模型明细">${open?'−':'+'}</button></td><th scope="row">${group.date}</th>${dimensions(group)}${summaryCells(group)}</tr>
+   const models=modelEntries(group).filter(([,total])=>total.tokens!==0||total.actual!==0);
+   const toggle=models.length?`<button type="button" class="cost-expand" data-cost-expand="${group.date}" aria-expanded="${open}" aria-controls="${rowId}" aria-label="${open?'收起':'展开'} ${group.date} 的模型明细">${open?'−':'+'}</button>`:'';
+   const summaryRow=`<tr class="cost-summary-row"><td class="cost-expand-cell">${toggle}</td><th scope="row">${group.date}</th>${dimensions(group)}${summaryCells(group)}</tr>`;
+   if(!models.length)return summaryRow;
+   return `${summaryRow}
    <tr id="${rowId}" class="cost-expanded-row" ${open?'':'hidden'}><td colspan="12"><table class="cost-model-table" aria-label="${group.date} 模型费用明细">
     <thead><tr><th scope="col">模型名称</th><th scope="col" class="money">消耗 Token</th><th scope="col" class="money">实际消耗 Token</th><th scope="col" class="money">Token费用</th><th scope="col" class="money">Token费用(USD)</th></tr></thead>
     <tbody>${models.map(([name,total])=>`<tr><th scope="row">${escape(name)}</th>${detailCells(total)}</tr>`).join('')}</tbody>
